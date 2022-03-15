@@ -1,11 +1,4 @@
-[package]
-name = "ronion"
-version = "0.1.0"
-authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.steensland@gmail.com>", "Tommy René Sætre <tommyrsaetre@gmail.com>"]
-edition = "2021"
-description = """
-Library for using the onion protocol to securely and anonymously connect to servers through onion relay nodes.
-"""
-repository = "https://github.com/tomrsae/ronion"
-
-[dependencies]
+[workspace]
+members = [
+    
+]

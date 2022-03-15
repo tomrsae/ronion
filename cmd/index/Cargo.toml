@@ -1,0 +1,7 @@
+[package]
+name = "ronion_index"
+version = "0.1.0"
+authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.steensland@gmail.com>", "Tommy René Sætre <tommyrsaetre@gmail.com>"]
+edition = "2021"
+
+[dependencies]
