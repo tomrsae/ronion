@@ -14,7 +14,10 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
+    - name: Checkout Repo
+    - uses: actions/checkout@v2
+
     - name: Run tests
       run: cargo test --verbose
