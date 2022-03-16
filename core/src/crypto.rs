@@ -1,66 +1,40 @@
+use aes::cipher::{generic_array::GenericArray, BlockCipher, BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::{Aes256, Aes256Dec, Aes256Enc, Block8};
 use rand_core::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
-struct KeyPair {
+struct Secret {
     secret: EphemeralSecret,
-    public_key: PublicKey,
 }
 
-fn create_key() -> KeyPair {
-    let secret = EphemeralSecret::new(OsRng);
-    let public_key = PublicKey::from(&secret);
-    KeyPair { secret, public_key }
-}
-
-fn create_keys(n: u8) -> Vec<KeyPair> {
-    let mut keys = Vec::new();
-    for _ in 0..n {
-        keys.push(create_key())
+impl Secret {
+    fn new() -> Secret {
+        Secret {
+            secret: EphemeralSecret::new(OsRng),
+        }
     }
-    keys
-}
 
-trait Key {
-    fn xor(&mut self, data: &Vec<u8>) -> Vec<u8>;
-}
-
-macro_rules! impl_key {
-    ($($t:ty),+) => {
-        $(impl Key for $t {
-            fn xor(&mut self, data: &Vec<u8>) -> Vec<u8> {
-                let key_bytes = self.as_bytes();
-                let key_len = key_bytes.len();
-                let mut res: Vec<u8> = Vec::new();
-                for i in 0..data.len() {
-                    res.push(data[i] ^ key_bytes[i % key_len])
-                }
-                return res
-            }
-        })*
+    fn create_secrets(n: usize) -> Vec<Secret> {
+        let mut secrets = Vec::with_capacity(n);
+        for _ in 0..n {
+            secrets.push(Secret::new())
+        }
+        secrets
     }
-}
 
-impl_key!(SharedSecret, PublicKey);
+    fn gen_pub_key(&mut self) -> PublicKey {
+        PublicKey::from(&self.secret)
+    }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    fn gen_shared_key(mut self, pub_key: &PublicKey) -> SharedSecret {
+        self.secret.diffie_hellman(pub_key)
+    }
 
-    #[test]
-    fn test_create_key() {}
-
-    #[test]
-    fn test_create_keys() {}
-
-    #[test]
-    fn test_xor() {
-        let mut pair = create_key();
-
-        let msg = "Hello".to_owned().into_bytes();
-
-        let encrypted_msg = pair.public_key.xor(&msg);
-        let unencrypted_msg = pair.public_key.xor(&encrypted_msg);
-
-        assert_eq!(msg, unencrypted_msg);
+    fn gen_cipher(&mut self) -> Aes256 {
+        let key = self.gen_pub_key();
+        match Aes256::new_from_slice(key.as_bytes()) {
+            Ok(v) => v,
+            Err(e) => panic!("Invalid key length: {}", e),
+        }
     }
 }
