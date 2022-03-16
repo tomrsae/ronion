@@ -9,3 +9,4 @@ Library for using the onion protocol to securely and anonymously connect to serv
 repository = "https://github.com/tomrsae/ronion"
 
 [dependencies]
+x25519-dalek = "1"
