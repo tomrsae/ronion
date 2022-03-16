@@ -5,3 +5,15 @@ version = 3
 [[package]]
 name = "ronion"
 version = "0.1.0"
+
+[[package]]
+name = "ronion_consumer"
+version = "0.1.0"
+
+[[package]]
+name = "ronion_index"
+version = "0.1.0"
+
+[[package]]
+name = "ronion_relay"
+version = "0.1.0"
