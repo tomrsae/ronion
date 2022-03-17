@@ -1,5 +1,4 @@
-use aes::cipher::KeyInit;
-use aes::Aes256;
+use aes::{cipher::KeyInit, Aes256};
 use rand_core::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
@@ -15,11 +14,7 @@ impl Secret {
     }
 
     pub fn create_secrets(n: usize) -> Vec<Secret> {
-        let mut secrets = Vec::with_capacity(n);
-        for _ in 0..n {
-            secrets.push(Secret::new())
-        }
-        secrets
+        (0..n).into_iter().map(|_| Secret::new()).collect()
     }
 
     pub fn gen_pub_key(&mut self) -> PublicKey {
@@ -32,9 +27,6 @@ impl Secret {
 
     pub fn gen_cipher(&mut self) -> Aes256 {
         let key = self.gen_pub_key();
-        match Aes256::new_from_slice(key.as_bytes()) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid key length: {}", e),
-        }
+        Aes256::new_from_slice(key.as_bytes()).expect("Invalid key length")
     }
 }
