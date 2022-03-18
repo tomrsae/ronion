@@ -1,13 +1,17 @@
 use async_std::{
     task,
     prelude::*,
-    net::{IpAddr, SocketAddr, TcpListener, TcpStream}, io::{WriteExt, ReadExt},
+    net::{IpAddr, SocketAddr, TcpListener, TcpStream}, io::{ReadExt},
     io::Result
 };
 
 use crate::{
-    relay_node::RelayNode, protocol::{Onion, OnionReader, OnionWriter},
-    crypto::Secret
+    relay_node::RelayNode,
+    crypto::Secret,
+    protocol::{
+        io::{OnionReader, OnionWriter},
+        onion::Onion
+    }
 };
 
 pub struct IndexNode {
@@ -66,11 +70,11 @@ impl IndexNode {
 
         let secret = Secret::new(peer_key_buf);
         let symmetric_cipher = secret.gen_symmetric_cipher();
-        let received_onion = OnionReader::new(reader, symmetric_cipher).read()?;
+        let received_onion = OnionReader::new(reader, symmetric_cipher.clone()).read().await?;
 
         let onion = IndexNode::handle_onion(received_onion)?;
         
-        writer.write(OnionWriter::new(writer, symmetric_cipher).write()?).await;
+        OnionWriter::new(writer, symmetric_cipher).write(onion).await?;
 
         Ok(())
     }
