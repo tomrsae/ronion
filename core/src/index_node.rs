@@ -14,7 +14,7 @@ pub struct IndexNode {
 }
 
 impl IndexNode {
-    pub fn new(ip: IpAddr) -> IndexNode {
+    pub fn new(ip: IpAddr) -> Self {
         IndexNode {
             ip: ip,
             available_relays: Vec::new()
