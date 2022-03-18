@@ -6,7 +6,7 @@ use async_std::{
 
 use std::future::Future;
 
-use crate::relay_node::RelayNode;
+use crate::{relay_node::RelayNode, protocol::{Onion, OnionReader, OnionWriter}, crypto::Secret};
 
 pub struct IndexNode {
     ip: IpAddr,
@@ -30,15 +30,15 @@ impl IndexNode {
         task::block_on(listen_future);
     }
 
-    async fn handle_relay(available_relays: &mut Vec<RelayNode>) {
-            // BLOCKED: ROnion protocol
+    // async fn handle_relay(onion: Onion, available_relays: &mut Vec<RelayNode>) -> Onion {
+    //         // BLOCKED: ROnion protocol
 
-            //available_relays.push(RelayNode::new())
-    }
+    //         //available_relays.push(RelayNode::new())
+    // }
 
-    async fn handle_consumer() {
-        // BLOCKED: ROnion protocol
-    }
+    // async fn handle_consumer(onion: Onion) -> Onion {
+    //     // BLOCKED: ROnion protocol
+    // }
     
     async fn listen(&self, socket: SocketAddr) {
         let listener = TcpListener::bind(socket).await.expect("Failed to bind to socket");
@@ -48,6 +48,14 @@ impl IndexNode {
             // check if request is coming from relay or consumer
             // and run the appropriate handler
             let stream = stream.expect("Failed to receive connection");
+            let (reader, writer) = &mut (&stream, &stream);
+
+            let mut pub_key_buf = [0u8; 32];
+            reader.read(&mut pub_key_buf).await.expect("Failed to read public key");
+
+            let secret = Secret::new(pub_key_buf);
+            let received_onion = OnionReader::new(reader, secret.gen_symmetric_cipher());
+
             //task::spawn(connection_handler(stream));
         }
     }
