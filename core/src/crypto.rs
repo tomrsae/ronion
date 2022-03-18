@@ -34,10 +34,10 @@ impl Secret {
         }
     }
 
-    pub fn create_secrets(n: usize, recv_keys: Vec<[u8; 32]>) -> Vec<Secret> {
+    pub fn create_secrets(n: usize, peer_public_keys: Vec<[u8; 32]>) -> Vec<Secret> {
         (0..n)
             .into_iter()
-            .map(|i| Secret::new(recv_keys[i]))
+            .map(|i| Secret::new(peer_public_keys[i]))
             .collect()
     }
 
