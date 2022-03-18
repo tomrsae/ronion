@@ -4,17 +4,22 @@ use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 pub struct Secret {
     secret: EphemeralSecret,
+    recv_key: [u8; 32],
 }
 
 impl Secret {
-    pub fn new() -> Secret {
+    pub fn new(recv_key: [u8; 32]) -> Secret {
         Secret {
             secret: EphemeralSecret::new(OsRng),
+            recv_key,
         }
     }
 
-    pub fn create_secrets(n: usize) -> Vec<Secret> {
-        (0..n).into_iter().map(|_| Secret::new()).collect()
+    pub fn create_secrets(n: usize, recv_keys: Vec<[u8; 32]>) -> Vec<Secret> {
+        (0..n)
+            .into_iter()
+            .map(|i| Secret::new(recv_keys[i]))
+            .collect()
     }
 
     pub fn gen_pub_key(&mut self) -> PublicKey {
@@ -27,10 +32,13 @@ impl Secret {
 
     pub fn gen_pub_cipher(&mut self) -> Aes256 {
         let key = self.gen_pub_key();
-        Aes256::new_from_slice(key.as_bytes()).expect("Invalid key length")
+        gen_cipher(key.as_bytes())
     }
+    pub fn gen_secret_cipher(&mut self) -> Aes256 {
+        gen_cipher(&self.recv_key)
+    }
+}
 
-    pub fn gen_secret_cipher(&mut self, pub_key: &[u8; 32]) -> Aes256 {
-        Aes256::new_from_slice(pub_key).expect("Invalid key length")
-    }
+fn gen_cipher(byte_key: &[u8; 32]) -> Aes256 {
+    Aes256::new_from_slice(byte_key).expect("Invalid key length")
 }
