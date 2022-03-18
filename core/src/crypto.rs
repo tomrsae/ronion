@@ -34,7 +34,7 @@ impl Secret {
         let key = self.gen_pub_key();
         gen_cipher(key.as_bytes())
     }
-    pub fn gen_secret_cipher(&mut self) -> Aes256 {
+    pub fn gen_secret_cipher(self) -> Aes256 {
         gen_cipher(&self.recv_key)
     }
 }
