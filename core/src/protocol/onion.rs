@@ -1,6 +1,4 @@
-use async_std::{net::IpAddr, io::{Result, Read, Write}};
-
-use crate::crypto::SymmetricCipher;
+use async_std::net::IpAddr;
 
 type RelayID = u32;
 
@@ -15,41 +13,6 @@ pub struct Onion {
     payload: Vec<u8>,
 }
 
-pub struct OnionReader<T: Read, C: SymmetricCipher> {
-    reader: T,
-    cipher: C,
-}
-
-pub struct OnionWriter<T: Write, C: SymmetricCipher> {
-    writer: T,
-    cipher: C,
-}
-
-impl<T: Read, C: SymmetricCipher> OnionReader<T, C> {
-    pub fn new(reader: T, cipher: C) -> OnionReader<T, C> {
-        OnionReader { 
-            reader, 
-            cipher,
-        }
-    }
-
-    pub async fn read() -> Result<Onion> {
-        panic!("not yet implemented");
-    }
-}
-
-impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
-    pub fn new(writer: T, cipher: C) -> OnionWriter<T, C> {
-        OnionWriter {
-            writer,
-            cipher,
-        }
-    }
-
-    pub async fn write(onion: Onion) -> Result<()> {
-        panic!("not yet implemented");
-    }
-}
 
 trait BitWriter<T> {
     fn write_bits(&mut self, index: u8, bits: T, n: u8);
