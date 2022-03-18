@@ -10,15 +10,24 @@ use crate::relay_node::RelayNode;
 
 pub struct IndexNode {
     ip: IpAddr,
+    port: u16,
     available_relays: Vec<RelayNode>
 }
 
 impl IndexNode {
-    pub fn new(ip: IpAddr) -> Self {
+    pub fn new(ip: IpAddr, port: u16) -> Self {
         IndexNode {
             ip: ip,
+            port: port,
             available_relays: Vec::new()
         }
+    }
+
+    pub fn start(&self) {
+        let socket = SocketAddr::new(self.ip, self.port);
+        let listen_future = self.listen(socket);
+        
+        task::block_on(listen_future);
     }
 
     async fn handle_relay(available_relays: &mut Vec<RelayNode>) {
@@ -31,9 +40,7 @@ impl IndexNode {
         // BLOCKED: ROnion protocol
     }
     
-    async fn listen(&self, port: u16)
-    {
-        let socket = SocketAddr::new(self.ip, port);
+    async fn listen(&self, socket: SocketAddr) {
         let listener = TcpListener::bind(socket).await.expect("Failed to bind to socket");
     
         let mut incoming = listener.incoming();
