@@ -1,4 +1,4 @@
-use async_std::{net::IpAddr, io::{Read, Write}};
+use async_std::{net::IpAddr, io::{Result, Read, Write}};
 
 use crate::crypto::SymmetricCipher;
 
@@ -33,7 +33,7 @@ impl<T: Read, C: SymmetricCipher> OnionReader<T, C> {
         }
     }
 
-    pub async fn read() -> Onion {
+    pub async fn read() -> Result<Onion> {
         panic!("not yet implemented");
     }
 }
@@ -46,7 +46,7 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
         }
     }
 
-    pub async fn write(onion: Onion) {
+    pub async fn write(onion: Onion) -> Result<()> {
         panic!("not yet implemented");
     }
 }
