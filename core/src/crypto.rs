@@ -28,19 +28,13 @@ impl Secret {
         PublicKey::from(&self.secret)
     }
 
-    pub fn gen_shared_key(self) -> SharedSecret {
-        self.secret
-            .diffie_hellman(&PublicKey::from(self.incoming_key))
-    }
-
-    //For circuit creation
-    pub fn gen_circuit_cipher(&self) -> Aes256 {
-        Secret::gen_cipher(&self.incoming_key)
-    }
-
     //For messaging
-    pub fn gen_secret_cipher(self) -> Aes256 {
-        Secret::gen_cipher(self.gen_shared_key().as_bytes())
+    pub fn gen_symmetric_cipher(self) -> Aes256 {
+        Secret::gen_cipher(
+            self.secret
+                .diffie_hellman(&PublicKey::from(self.incoming_key))
+                .as_bytes(),
+        )
     }
 
     fn gen_cipher(byte_key: &[u8; 32]) -> Aes256 {
