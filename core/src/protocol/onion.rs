@@ -2,6 +2,7 @@ use async_std::net::IpAddr;
 
 type RelayID = u32;
 
+#[derive(Clone)]
 pub enum Target {
     Relay(RelayID),
     IP(IpAddr),
@@ -9,7 +10,6 @@ pub enum Target {
 }
 
 pub struct Onion {
-    target: Target,
-    payload: Vec<u8>,
+    pub target: Target,
+    pub payload: Vec<u8>,
 }
-
