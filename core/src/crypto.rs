@@ -4,14 +4,14 @@ use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 pub struct Secret {
     secret: EphemeralSecret,
-    recv_key: [u8; 32],
+    incoming_key: [u8; 32],
 }
 
 impl Secret {
-    pub fn new(recv_key: [u8; 32]) -> Secret {
+    pub fn new(incoming_key: [u8; 32]) -> Self {
         Secret {
             secret: EphemeralSecret::new(OsRng),
-            recv_key,
+            incoming_key,
         }
     }
 
@@ -22,23 +22,28 @@ impl Secret {
             .collect()
     }
 
-    pub fn gen_pub_key(&mut self) -> PublicKey {
+    //Should be sent to the other peer. Must be generated/used before shared key
+    //since shared key consumes the secret.
+    pub fn gen_pub_key(&self) -> PublicKey {
         PublicKey::from(&self.secret)
     }
 
-    pub fn gen_shared_key(self, pub_key: &PublicKey) -> SharedSecret {
-        self.secret.diffie_hellman(pub_key)
+    pub fn gen_shared_key(self) -> SharedSecret {
+        self.secret
+            .diffie_hellman(&PublicKey::from(self.incoming_key))
     }
 
-    pub fn gen_pub_cipher(&mut self) -> Aes256 {
-        let key = self.gen_pub_key();
-        gen_cipher(key.as_bytes())
+    //For circuit creation
+    pub fn gen_circuit_cipher(&self) -> Aes256 {
+        Secret::gen_cipher(&self.incoming_key)
     }
+
+    //For messaging
     pub fn gen_secret_cipher(self) -> Aes256 {
-        gen_cipher(&self.recv_key)
+        Secret::gen_cipher(self.gen_shared_key().as_bytes())
     }
-}
 
-fn gen_cipher(byte_key: &[u8; 32]) -> Aes256 {
-    Aes256::new_from_slice(byte_key).expect("Invalid key length")
+    fn gen_cipher(byte_key: &[u8; 32]) -> Aes256 {
+        Aes256::new_from_slice(byte_key).expect("Invalid key length")
+    }
 }
