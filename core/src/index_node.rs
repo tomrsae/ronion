@@ -1,12 +1,14 @@
 use async_std::{
     task,
     prelude::*,
-    net::{IpAddr, SocketAddr, TcpListener, TcpStream}
+    net::{IpAddr, SocketAddr, TcpListener, TcpStream}, io::{WriteExt, ReadExt},
+    io::Result
 };
 
-use std::future::Future;
-
-use crate::{relay_node::RelayNode, protocol::{Onion, OnionReader, OnionWriter}, crypto::Secret};
+use crate::{
+    relay_node::RelayNode, protocol::{Onion, OnionReader, OnionWriter},
+    crypto::Secret
+};
 
 pub struct IndexNode {
     ip: IpAddr,
@@ -39,24 +41,41 @@ impl IndexNode {
     // async fn handle_consumer(onion: Onion) -> Onion {
     //     // BLOCKED: ROnion protocol
     // }
-    
+
     async fn listen(&self, socket: SocketAddr) {
         let listener = TcpListener::bind(socket).await.expect("Failed to bind to socket");
-    
+        
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
-            // check if request is coming from relay or consumer
-            // and run the appropriate handler
-            let stream = stream.expect("Failed to receive connection");
-            let (reader, writer) = &mut (&stream, &stream);
+            let handler_future
+                = async {
+                    Self::handle_connection(stream.expect("Failed to read from stream"))
+                        .await
+                        .expect("Failed to handle connection")
+                };
 
-            let mut pub_key_buf = [0u8; 32];
-            reader.read(&mut pub_key_buf).await.expect("Failed to read public key");
-
-            let secret = Secret::new(pub_key_buf);
-            let received_onion = OnionReader::new(reader, secret.gen_symmetric_cipher());
-
-            //task::spawn(connection_handler(stream));
+            task::spawn(handler_future);
         }
+    }
+
+    async fn handle_connection(stream: TcpStream) -> Result<()> {
+        let (reader, writer) = &mut (&stream, &stream);
+
+        let mut peer_key_buf = [0u8; 32];
+        reader.read_exact(&mut peer_key_buf).await?;
+
+        let secret = Secret::new(peer_key_buf);
+        let symmetric_cipher = secret.gen_symmetric_cipher();
+        let received_onion = OnionReader::new(reader, symmetric_cipher).read()?;
+
+        let onion = IndexNode::handle_onion(received_onion)?;
+        
+        writer.write(OnionWriter::new(writer, symmetric_cipher).write()?).await;
+
+        Ok(())
+    }
+
+    fn handle_onion(onion: Onion) -> Result<Onion> {
+        panic!("not yet implemented");
     }
 }
