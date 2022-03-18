@@ -25,8 +25,12 @@ impl Secret {
         self.secret.diffie_hellman(pub_key)
     }
 
-    pub fn gen_cipher(&mut self) -> Aes256 {
+    pub fn gen_pub_cipher(&mut self) -> Aes256 {
         let key = self.gen_pub_key();
         Aes256::new_from_slice(key.as_bytes()).expect("Invalid key length")
+    }
+
+    pub fn gen_secret_cipher(&mut self, pub_key: &[u8; 32]) -> Aes256 {
+        Aes256::new_from_slice(pub_key).expect("Invalid key length")
     }
 }
