@@ -1,8 +1,8 @@
 use async_std::net::IpAddr;
 
 pub struct RelayNode {
-    id: u32,
-    ip: IpAddr
+    pub id: u32,
+    pub ip: IpAddr
 }
 
 impl RelayNode {
@@ -11,13 +11,5 @@ impl RelayNode {
             id: id,
             ip: ip
         }
-    }
-
-    pub fn id(&self) -> u32 {
-        self.id
-    }
-
-    pub fn ip(&self) -> IpAddr {
-        self.ip
     }
 }
