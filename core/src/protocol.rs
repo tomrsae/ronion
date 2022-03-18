@@ -1,4 +1,6 @@
-use std::{net::IpAddr, io::Read};
+use std::{net::IpAddr, io::{Read, Write}};
+
+use crate::crypto::SymmetricCipher;
 
 type RelayID = u32;
 
@@ -13,20 +15,23 @@ struct Onion {
     payload: Vec<u8>,
 }
 
-pub struct OnionReader<T: Read> {
+pub struct OnionReader<T: Read, C: SymmetricCipher> {
     reader: T,
+    cipher: C,
 }
 
-impl<T: Read> OnionReader<T> {
-    pub fn new(reader: T) -> OnionReader<T> {
-        OnionReader { reader }
+impl<T: Read, C: SymmetricCipher> OnionReader<T, C> {
+    pub fn new(reader: T, cipher: C) -> OnionReader<T, C> {
+        OnionReader { 
+            reader, 
+            cipher,
+        }
     }
 }
 
-struct OnionWriter {
+impl<T: Read, C: SymmetricCipher> OnionReader<T, C>{
+
 }
-
-
 
 trait BitWriter<T> {
     fn write_bits(&mut self, index: u8, bits: T, n: u8);
