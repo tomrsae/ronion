@@ -32,15 +32,25 @@ impl IndexNode {
             // BLOCKED: ROnion protocol
         }).await
     }
+
+    async fn handle_relay() {
+
+    }
+
+    async fn handle_consumer() {
+        
+    }
     
     async fn listen<F>(&self, port: u16, connection_handler: impl Fn(TcpStream) -> F)
-        where F: Future + Send + 'static
+        where F: Future<Output = ()> + Send + 'static
     {
         let socket = SocketAddr::new(self.ip, port);
         let listener = TcpListener::bind(socket).await.expect("Failed to bind to socket");
     
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
+            // check if request is coming from relay or consumer
+            // and run the appropriate handler
             task::spawn(connection_handler(stream.expect("Failed to receive connection")));
         }
     }
