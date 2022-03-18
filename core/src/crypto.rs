@@ -1,10 +1,29 @@
-use aes::{cipher::KeyInit, Aes256};
+use aes::{
+    cipher::{BlockEncrypt, KeyInit, BlockDecrypt, generic_array::GenericArray}, 
+    Aes256
+};
 use rand_core::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
 
 pub struct Secret {
     secret: EphemeralSecret,
     incoming_key: [u8; 32],
+}
+
+pub trait SymmetricCipher {
+    fn encrypt(&self, block: &mut [u8]);
+    fn decrypt(&self, block: &mut [u8]);
+}
+
+impl SymmetricCipher for Aes256 {
+    fn encrypt(&self, block: &mut [u8]) {
+        let mut array = GenericArray::from_mut_slice(block);
+        self.encrypt_block(&mut array);
+    }
+    fn decrypt(&self, block: &mut [u8]) {
+        let mut array = GenericArray::from_mut_slice(block);
+        self.decrypt_block(&mut array);
+    }
 }
 
 impl Secret {
