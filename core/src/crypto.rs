@@ -1,13 +1,13 @@
 use aes::{
-    cipher::{BlockEncrypt, KeyInit, BlockDecrypt, generic_array::GenericArray}, 
-    Aes256
+    cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit},
+    Aes256,
 };
 use rand_core::OsRng;
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 pub struct Secret {
     secret: EphemeralSecret,
-    incoming_key: [u8; 32],
+    peer_public_key: [u8; 32],
 }
 
 pub trait SymmetricCipher {
@@ -27,17 +27,17 @@ impl SymmetricCipher for Aes256 {
 }
 
 impl Secret {
-    pub fn new(incoming_key: [u8; 32]) -> Self {
+    pub fn new(peer_public_key: [u8; 32]) -> Self {
         Secret {
             secret: EphemeralSecret::new(OsRng),
-            incoming_key,
+            peer_public_key,
         }
     }
 
-    pub fn create_secrets(n: usize, recv_keys: Vec<[u8; 32]>) -> Vec<Secret> {
+    pub fn create_secrets(n: usize, peer_public_keys: Vec<[u8; 32]>) -> Vec<Secret> {
         (0..n)
             .into_iter()
-            .map(|i| Secret::new(recv_keys[i]))
+            .map(|i| Secret::new(peer_public_keys[i]))
             .collect()
     }
 
@@ -51,7 +51,7 @@ impl Secret {
     pub fn gen_symmetric_cipher(self) -> Aes256 {
         Secret::gen_cipher(
             self.secret
-                .diffie_hellman(&PublicKey::from(self.incoming_key))
+                .diffie_hellman(&PublicKey::from(self.peer_public_key))
                 .as_bytes(),
         )
     }
