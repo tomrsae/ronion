@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::{net::IpAddr, io::Read};
 
 type RelayID = u32;
 
@@ -12,6 +12,21 @@ struct Onion {
     target: Target,
     payload: Vec<u8>,
 }
+
+pub struct OnionReader<T: Read> {
+    reader: T,
+}
+
+impl<T: Read> OnionReader<T> {
+    pub fn new(reader: T) -> OnionReader<T> {
+        OnionReader { reader }
+    }
+}
+
+struct OnionWriter {
+}
+
+
 
 trait BitWriter<T> {
     fn write_bits(&mut self, index: u8, bits: T, n: u8);
