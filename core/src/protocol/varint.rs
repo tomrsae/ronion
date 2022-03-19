@@ -1,5 +1,4 @@
-use super::bitwriter::{BitWriter};
-use num::{Integer, Signed, Unsigned};
+use super::bitwriter::BitWriter;
 
 pub(super) trait VarIntReadable<T> {
     fn read_varint(b: &[u8]) -> T;
