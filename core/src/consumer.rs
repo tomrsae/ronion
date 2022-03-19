@@ -6,13 +6,17 @@ use crate::{
     },
 };
 use aes::Aes256;
-use async_std::{io::Cursor, net::TcpStream};
+use async_std::{
+    io::{Cursor, ReadExt, WriteExt},
+    net::TcpStream,
+};
 
 pub struct Consumer {
     public_keys: Vec<[u8; 32]>,
     reader: OnionReader<TcpStream, Aes256>,
     writer: OnionWriter<TcpStream, Aes256>,
     onionizer: Onionizer,
+    entry_target: Target,
 }
 
 impl Consumer {
@@ -20,31 +24,71 @@ impl Consumer {
         n: usize,
         stream: &TcpStream,
         peer_public_keys: Vec<[u8; 32]>,
-        targets: Vec<Target>,
+        mut targets: Vec<Target>,
     ) -> Self {
+        let index_pub_key: [u8; 32] = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ];
         let mut secrets = Secret::create_secrets(n, peer_public_keys);
-        let mut reader: OnionReader<TcpStream, Aes256>;
         let mut public_keys = Vec::<[u8; 32]>::with_capacity(n);
+        let mut reader: OnionReader<TcpStream, Aes256>;
         let mut ciphers = Vec::<Aes256>::with_capacity(n);
 
-        for i in 0..(n - 1) {
+        for i in 0..n {
             let secret = secrets.remove(i);
             public_keys.push(secret.gen_pub_key().as_bytes().to_owned());
             ciphers.push(secret.gen_symmetric_cipher());
         }
+        let entry_target = targets.remove(n - 1);
 
         Consumer {
             public_keys,
             reader: OnionReader::new(stream.clone(), ciphers[n - 1].clone()),
             writer: OnionWriter::new(stream.clone(), ciphers[n - 1].clone()),
             onionizer: Onionizer::new(targets, ciphers.clone()),
+            entry_target,
         }
     }
 
-    pub async fn dial_index() -> TcpStream {
-        let addr = ""; //Decide addresses to use/how to find address?
-        TcpStream::connect(addr).await.expect("")
+    pub async fn dial(
+        addr: &str,
+        peer_pub_key: [u8; 32],
+    ) -> (
+        OnionReader<TcpStream, Aes256>,
+        OnionWriter<TcpStream, Aes256>,
+    ) {
+        let mut stream = TcpStream::connect(addr).await.expect("");
+        Consumer::handshake(&mut stream, peer_pub_key).await
     }
+
+    pub async fn handshake(
+        stream: &mut TcpStream,
+        peer_pub_key: [u8; 32],
+    ) -> (
+        OnionReader<TcpStream, Aes256>,
+        OnionWriter<TcpStream, Aes256>,
+    ) {
+        let secret = Secret::new(peer_pub_key);
+        let pub_key = secret.gen_pub_key();
+
+        stream.write(&pub_key.to_bytes()).await;
+
+        let cipher = secret.gen_symmetric_cipher();
+        (
+            OnionReader::new(stream.clone(), cipher.clone()),
+            OnionWriter::new(stream.clone(), cipher.clone()),
+        )
+    }
+
+    // pub async fn handshake_entry(
+    //     stream: &mut TcpStream,
+    //     entry_target: Target,
+    //     entry_pub_key: [u8; 32],
+    // ) {
+    //     let secret = Secret::new(index_pub_key);
+    //     let cipher = secret.gen_symmetric_cipher();
+    // }
 
     //Fix return
     pub fn send_message() -> bool {
