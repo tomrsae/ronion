@@ -1,9 +1,11 @@
-use super::onion::Onion;
+use super::onion::{ Onion, Target};
 use crate::crypto::SymmetricCipher;
-use async_std::io::{Read, Result, Write};
+use std::pin::Pin;
+use async_std::io::{Read, Result, Write, ReadExt, BufReader};
+use super::bitwriter::BitWriter;
 
 pub struct OnionReader<T: Read, C: SymmetricCipher> {
-    reader: T,
+    reader: Pin<Box<BufReader<T>>>,
     cipher: C,
 }
 
@@ -14,10 +16,27 @@ pub struct OnionWriter<T: Write, C: SymmetricCipher> {
 
 impl<T: Read, C: SymmetricCipher> OnionReader<T, C> {
     pub fn new(reader: T, cipher: C) -> OnionReader<T, C> {
-        OnionReader { reader, cipher }
+        OnionReader { 
+            reader: Box::pin(BufReader::new(reader)), 
+            cipher 
+        }
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
+        let mut buf = [0u8; 1024];
+        self.reader.read_exact(&mut buf[0..1]);
+        let target_type = buf[0].read_bits(6, 2);
+        /*let target = match target_type {
+            0 => {
+                Target::Relay()
+            }
+            1 => { 
+                Target::IP()
+            }
+            2 => Target::Current
+            _ => panic!("not implemented");
+        }*/
+
         panic!("not yet implemented");
     }
 }
