@@ -4,5 +4,4 @@ members = [
     "cmd/consumer/",
     "cmd/index/",
     "cmd/relay/",
-    "cmd/proxy/",
 ]
