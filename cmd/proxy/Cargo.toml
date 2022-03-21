@@ -5,3 +5,6 @@ authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.
 edition = "2021"
 
 [dependencies]
+shadowsocks = "1.14.0"
+tokio = { version = "1.17.0", features = ["full"] }
+ronion-lib = { path = "../../ronion-lib" }

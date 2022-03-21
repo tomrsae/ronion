@@ -15,7 +15,8 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::consumer_node::consumer::Consumer;
+extern crate ronion_lib;
+use ronion_lib::consumer::Consumer;
 
 pub struct Proxy {
     consumer: Consumer,
@@ -32,7 +33,7 @@ impl Proxy {
         Proxy { consumer }
     }
 
-    pub async fn listen_consumers(&mut self, context: Arc<Context>, svr_cfg: &ServerConfig) -> () {
+    pub async fn serve_consumers(&mut self, context: Arc<Context>, svr_cfg: &ServerConfig) -> () {
         let listener = ProxyListener::bind(context, svr_cfg).await.unwrap();
         loop {
             let (stream, _) = listener.accept().await.unwrap();

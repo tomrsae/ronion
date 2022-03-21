@@ -1,5 +1,5 @@
 [package]
-name = "ronion"
+name = "ronion-lib"
 version = "0.1.0"
 authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.steensland@gmail.com>", "Tommy René Sætre <tommyrsaetre@gmail.com>"]
 edition = "2021"
@@ -13,6 +13,3 @@ x25519-dalek = "1"
 rand_core = { version = "0.5.1", features = ["getrandom"] }
 aes = "0.8.1"
 async-std = "1.10.0"
-shadowsocks = "1.14.0"
-tokio = { version = "1.17.0", features = ["full"] }
-shadowsocks-service = "1.14.1"

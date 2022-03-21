@@ -1,4 +1,4 @@
-pub mod consumer_node;
+pub mod consumer;
 pub mod crypto;
 pub mod index_node;
 pub mod protocol;

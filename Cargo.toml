@@ -1,7 +1,7 @@
 [workspace]
 members = [
-    "core/",
-    "cmd/consumer/",
+    "ronion-lib/",
+    "cmd/proxy/",
     "cmd/index/",
     "cmd/relay/",
 ]
