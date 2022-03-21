@@ -18,12 +18,7 @@ pub struct Consumer {
 }
 
 impl Consumer {
-    pub async fn new(mut n: usize) -> Self {
-        let index_pub_key: [u8; 32] = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32,
-        ];
-
+    pub async fn new(mut n: usize, index_pub_key: [u8; 32]) -> Self {
         let (mut index_reader, index_writer) = Consumer::dial("", index_pub_key).await;
 
         //index_writer.write(onion) //Write "I want n number of relays to connect to"
@@ -33,8 +28,11 @@ impl Consumer {
             Consumer::parse_index_onion(index_onion);
         //check that num_relays match n
 
+        //In general the higher the index in the vectors, the closer the value is to the onion core
+        //This means targets[targets.len() -1] is the core, and targets[0] is always the outermost layer
+
         n -= 1;
-        let entry_id = target_ids.remove(0);
+        target_ids.remove(0);
         let entry_pub_key = peer_pub_keys.remove(0);
 
         let mut secrets = Secret::create_secrets(n, peer_pub_keys);
@@ -48,7 +46,7 @@ impl Consumer {
         }
 
         let (entry_reader, entry_writer) = Consumer::create_circuit(
-            "",
+            &entry_ip.to_string(),
             pub_keys,
             entry_pub_key,
             target_ids.clone(),
@@ -59,7 +57,7 @@ impl Consumer {
         Consumer {
             entry_reader,
             entry_writer,
-            onionizer: Onionizer::new(target_ids, ciphers), //Both target ids and ips?
+            onionizer: Onionizer::new(target_ids, ciphers),
         }
     }
 
@@ -84,7 +82,7 @@ impl Consumer {
         let secret = Secret::new(peer_pub_key);
         let pub_key = secret.gen_pub_key();
 
-        stream.write(&pub_key.to_bytes()).await;
+        stream.write(&pub_key.to_bytes()).await.unwrap();
 
         let cipher = secret.gen_symmetric_cipher();
         (
@@ -125,7 +123,7 @@ impl Consumer {
         OnionReader<TcpStream, Aes256>,
         OnionWriter<TcpStream, Aes256>,
     ) {
-        let (entry_reader, mut entry_writer) = Consumer::dial("", entry_pub_key).await;
+        let (entry_reader, mut entry_writer) = Consumer::dial(addr, entry_pub_key).await;
 
         for i in 0..targets.len() {
             let onion = Onionizer::grow_onion(
@@ -176,6 +174,7 @@ impl Onionizer {
             };
         }
 
+        //Core is the newest value added to the vectors
         let mut onion_load = Onionizer::onionize(
             targets.remove(targets.len() - 1),
             payload,
@@ -185,9 +184,9 @@ impl Onionizer {
 
         for i in 0..targets.len() - 1 {
             onion_load = Onionizer::onionize(
-                targets[targets.len() - 1 - i].clone(),
+                targets[targets.len() - 1 - i].clone(), //Could use remove here insted of clone?
                 onion_load,
-                ciphers[ciphers.len() - 1 - i].clone(),
+                ciphers[ciphers.len() - 1 - i].clone(), //Could use remove here insted of clone?
             )
             .await
         }
