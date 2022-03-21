@@ -18,8 +18,8 @@ pub struct Consumer {
 }
 
 impl Consumer {
-    pub async fn new(mut n: usize, index_pub_key: [u8; 32]) -> Self {
-        let (mut index_reader, index_writer) = Consumer::dial("", index_pub_key).await;
+    pub async fn new(mut n: usize, index_pub_key: [u8; 32], index_addr: &str) -> Self {
+        let (mut index_reader, index_writer) = Consumer::dial(index_addr, index_pub_key).await;
 
         //index_writer.write(onion) //Write "I want n number of relays to connect to"
 
