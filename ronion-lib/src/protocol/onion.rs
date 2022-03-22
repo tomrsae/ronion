@@ -23,11 +23,11 @@ pub enum Message {
 
     GetRelaysRequest(),
     GetRelaysResponse(Vec<Relay>),
-
-    
+ 
     RelayPingRequest(),
     RelayPingResponse(),
 }
+
 
 pub struct Onion {
     pub target: Target,
