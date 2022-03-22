@@ -19,7 +19,7 @@ pub enum Message {
     HelloRequest([u8; 32]),
     HelloResponse(),
 
-    Close(String),
+    Close(Option<String>),
     Payload(Vec<u8>),
 
     GetRelaysRequest(),
