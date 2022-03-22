@@ -59,6 +59,8 @@ impl IndexNode {
     async fn handle_connection(stream: TcpStream, context: Arc<Mutex<IndexContext>>) -> Result<()> {
         let (reader, writer) = &mut (&stream, &stream);
         
+        let hello = OnionReader::new(reader, None).read().await?;
+
         let mut peer_key_buf = [0u8; 32];
         reader.read_exact(&mut peer_key_buf).await?;
         

@@ -8,12 +8,14 @@ pub(super) enum Error {
     Malformed,
 }
 
-pub(super) trait VarIntReadable<T> {
+pub(super) trait VarIntReadable {
+    type Target;
+
     /// Reads a VarInt from a buffer.
     /// Returns either an error or a tuple of (value, bytes_read).
-    fn read_varint(b: &[u8]) -> Result<(T, usize), Error>;
+    fn read_varint(b: &[u8]) -> Result<(Self::Target, usize), Error>;
 }
-pub(super) trait VarIntWritable<T> {
+pub(super) trait VarIntWritable {
     /// Writes a VarInt into a buffer.
     /// Returns either an error or the amount of bytes written.
     fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error>;
@@ -21,8 +23,10 @@ pub(super) trait VarIntWritable<T> {
 
 macro_rules! unsigned_impl {
     ($t:ty) => {
-       impl VarIntReadable<$t> for $t {
-           fn read_varint(b: &[u8]) -> Result<($t, usize), Error> {
+       impl VarIntReadable for $t {
+            type Target = $t;
+
+           fn read_varint(b: &[u8]) -> Result<(Self::Target, usize), Error> {
                 let mut value: $t = 0;
                 let mut more = 1u8;
                 let mut i = 0;
@@ -44,7 +48,7 @@ macro_rules! unsigned_impl {
             }
         }
 
-        impl VarIntWritable<$t> for $t {
+        impl VarIntWritable for $t {
            fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error> {
                 let mut value = self.to_le();
                 let mut i = 0;

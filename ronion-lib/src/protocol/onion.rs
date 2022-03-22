@@ -9,7 +9,6 @@ pub enum Target {
     Current,
 }
 
-#[derive(Clone)]
 pub struct Relay {
     pub id: RelayID,
     pub addr: SocketAddr
@@ -24,10 +23,11 @@ pub enum Message {
 
     GetRelaysRequest(),
     GetRelaysResponse(Vec<Relay>),
-
+ 
     RelayPingRequest(),
     RelayPingResponse(),
 }
+
 
 pub struct Onion {
     pub target: Target,
