@@ -1,8 +1,8 @@
 use super::onion::{ Onion, Target};
 use crate::crypto::SymmetricCipher;
 use std::pin::Pin;
-use async_std::io::{Read, Result, Write, ReadExt, BufReader};
-use super::bitwriter::BitWriter;
+use async_std::io::{Read, Result, Write, ReadExt, BufReader, prelude::BufReadExt};
+use super::{bitwriter::BitWriter, varint};
 
 pub struct OnionReader<T: Read, C: SymmetricCipher> {
     reader: Pin<Box<BufReader<T>>>,
@@ -26,8 +26,12 @@ impl<T: Read, C: SymmetricCipher> OnionReader<T, C> {
         let mut buf = [0u8; 1024];
         self.reader.read_exact(&mut buf[0..1]);
         let target_type = buf[0].read_bits(6, 2);
-        /*let target = match target_type {
+        //self.reader.read_while()
+        /*        let target = match target_type {
             0 => {
+                self.reader.read_while(
+                self.reader.read_varint
+                u32::read_varint(
                 Target::Relay()
             }
             1 => { 

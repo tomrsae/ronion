@@ -1,15 +1,36 @@
-use async_std::net::IpAddr;
+use async_std::net::{SocketAddr};
 
 type RelayID = u32;
 
 #[derive(Clone)]
 pub enum Target {
     Relay(RelayID),
-    IP(IpAddr),
+    IP(SocketAddr),
     Current,
+}
+
+pub struct Relay {
+    pub id: RelayID,
+    pub addr: SocketAddr
+}
+
+pub enum Message {
+    HelloRequest([u8; 32]),
+    HelloResponse(),
+
+    Close(String),
+    Payload(Vec<u8>),
+
+    GetRelaysRequest(),
+    GetRelaysResponse(Vec<Relay>),
+
+    
+    RelayPingRequest(),
+    RelayPingResponse(),
 }
 
 pub struct Onion {
     pub target: Target,
-    pub payload: Vec<u8>,
+    pub circuid_id: Option<u32>,
+    pub message: Message,
 }
