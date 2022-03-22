@@ -1,17 +1,17 @@
 use async_std::{
     task,
-    sync::{Arc,Mutex},
+    sync::{Arc, Mutex},
     prelude::*,
-    net::{IpAddr, SocketAddr, TcpListener, TcpStream}, io::{ReadExt},
-    io::Result
+    net::{IpAddr, SocketAddr, TcpListener, TcpStream},
+    io::{Result, ReadExt}
 };
 
 use crate::{
     crypto::Secret,
     protocol::{
         io::{OnionReader, OnionWriter},
-        onion::Onion
-    }, relay_node::RelayNode
+        onion::{Onion, Target, Message, Relay}
+    }
 };
 
 use super::index_context::IndexContext;
@@ -24,7 +24,7 @@ pub struct IndexNode {
 
 impl IndexNode {
     pub fn new(ip: IpAddr, port: u16) -> Self {
-        IndexNode {
+        Self {
             ip: ip,
             port: port,
             context: Arc::new(Mutex::new(IndexContext::new()))
@@ -66,32 +66,46 @@ impl IndexNode {
         let symmetric_cipher = secret.gen_symmetric_cipher();
         let received_onion = OnionReader::new(reader, symmetric_cipher.clone()).read().await?;
         
-        let onion = IndexNode::handle_onion(received_onion, context)?;
+        let onion = Self::handle_onion(received_onion, stream.peer_addr()?, context).await?;
         
-        OnionWriter::new(writer, symmetric_cipher).write(onion).await?;
-        
-        Ok(())
+        OnionWriter::new(writer, symmetric_cipher).write(onion).await
     }
     
-    fn handle_onion(onion: Onion, context: Arc<Mutex<IndexContext>>) -> Result<Onion> {
-        panic!("not yet implemented");
+    async fn handle_onion(onion: Onion, peer_addr: SocketAddr, context: Arc<Mutex<IndexContext>>) -> Result<Onion> {
+        let mut guard = context.lock().await;
+        let context_locked = &mut *guard;
+
+        let reply = match onion.message {
+            Message::GetRelaysRequest() => {
+                Onion {
+                    target: Target::Current,
+                    circuid_id: Some(context_locked.circ_id_generator.get_uid()),
+                    message: Message::GetRelaysResponse(context_locked.available_relays.clone())
+                }
+            },
+            Message::RelayPingRequest() => {
+                let existing_relay = context_locked.available_relays.iter().find(|relay| relay.addr == peer_addr);
+                
+                if existing_relay.is_none() {
+                    context_locked.available_relays.push(Relay {
+                        id: context_locked.relay_id_generator.get_uid(),
+                        addr: peer_addr
+                    });
+                }
+                
+                Onion {
+                    target: Target::Current,
+                    circuid_id: None,
+                    message: Message::RelayPingResponse()
+                }
+            },
+            _ => Onion {
+                target: Target::Current,
+                circuid_id: None,
+                message: Message::Close("Invalid request".to_string())
+            }
+        };
+
+        Ok(reply)
     }
-
-    // async fn handle_relay(onion: Onion, context: Arc<Mutex<IndexContext>>) -> Result<Onion> {
-    //     let guard = context.lock().await;
-    //     let context_locked = &mut *guard;
-        
-    //     context_locked.available_relays.push(RelayNode {
-
-    //     });
-
-    //     Onion {
-    //         target: ,
-    //         payload: 
-    //     }
-    // }
-    
-    // async fn handle_consumer(onion: Onion) -> Onion {
-    //     // BLOCKED: ROnion protocol
-    // }
 }
