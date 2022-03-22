@@ -9,6 +9,7 @@ pub enum Target {
     Current,
 }
 
+#[derive(Clone)]
 pub struct Relay {
     pub id: RelayID,
     pub addr: SocketAddr
