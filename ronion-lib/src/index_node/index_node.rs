@@ -104,7 +104,7 @@ impl IndexNode {
             _ => Onion {
                 target: Target::Current,
                 circuid_id: None,
-                message: Message::Close("Invalid request".to_string())
+                message: Message::Close(Some("Invalid request".to_string()))
             }
         };
 
