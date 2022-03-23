@@ -22,13 +22,18 @@ impl SymmetricCipher for Aes256 {
     }
 }
 
+#[derive(Debug)]
 enum KeypairError {
     InvalidData,
 }
+
+#[derive(Debug)]
 enum SignatureError {
     InvalidData,
     InvalidSignature
 }
+
+#[derive(Debug)]
 enum SigningPublicKeyError {
     InvalidData,
 }
