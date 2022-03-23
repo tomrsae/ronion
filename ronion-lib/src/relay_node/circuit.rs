@@ -1,4 +1,4 @@
-use async_std::net::TcpStream;
+use async_std::io::Result;
 
 use super::circuit_connection::CircuitConnection;
 
@@ -8,3 +8,14 @@ pub struct Circuit {
     pub outgoing: CircuitConnection
 }
 
+impl Circuit {
+    pub fn activate(&self) -> Result<()> {
+        
+
+        Ok(())
+    }
+
+    async fn activate_internal() -> Result<()> {
+        Ok(())
+    }
+}

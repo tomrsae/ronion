@@ -13,7 +13,7 @@ use crate::{
     }
 };
 
-use super::relay_context::RelayContext;
+use super::{relay_context::RelayContext, circuit_connection::CircuitConnection, circuit::Circuit};
 
 pub struct RelayNode {
     ip: IpAddr,
@@ -42,9 +42,10 @@ impl RelayNode {
         
         let mut incoming = listener.incoming();
         while let Some(stream) = incoming.next().await {
+            let context = self.context.clone();
             let handler_future
                 = async {
-                    Self::handle_connection(stream.expect("Failed to read from stream"))
+                    Self::handle_connection(stream.expect("Failed to read from stream"), context)
                     .await
                     .expect("Failed to handle connection")
                 };
@@ -53,7 +54,26 @@ impl RelayNode {
         }
     }
 
-    async fn handle_connection(stream: TcpStream) -> Result<()> {
+    async fn handle_connection(incoming_stream: TcpStream, context: Arc<Mutex<RelayContext>>) -> Result<()> {
+        let incoming = CircuitConnection { stream: incoming_stream };
+
+        if let Ok(outgoing_stream) = TcpStream::connect("localhost:7070").await { // fix
+            let circuit = Arc::new(Circuit {
+                id: 2_u32, //idk
+                outgoing: CircuitConnection { stream: outgoing_stream },
+                incoming: incoming
+            });
+
+            task::spawn(circuit.activate());
+
+            let mut guard = context.lock().await;
+            let context_locked = &mut *guard;
+
+            context_locked.circuits.push(circuit);
+        } else {
+            // err?
+        }
+
         Ok(())
     }
 
