@@ -17,7 +17,7 @@ pub struct Relay {
 
 pub enum Message {
     HelloRequest([u8; 32]),
-    HelloResponse(),
+    HelloResponse([u8; 96]),
 
     Close(Option<String>),
     Payload(Vec<u8>),

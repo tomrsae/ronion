@@ -1,28 +1,8 @@
-use super::{onion::{ Onion, Target }, varint};
-use crate::crypto::SymmetricCipher;
+use super::{onion::{ Onion, Target,, Relay Relay }, varint};
+use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::DerefMut};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
-
-enum MessageType {
-    HelloRequest = 0,
-    HelloResponse = 1,
-
-    Close = 2,
-    Payload = 3,
-
-    GetRelaysRequest = 4,
-    GetRelaysResponse = 5,
-
-    RelayPingRequest = 6,
-    RelayPingResponse = 7,
-}
-impl MessageType {
-    fn to_u8(self) -> u8 {
-        self as u8
-    }
-}
-
 
 pub struct RawOnionReader<T: Read> { 
     reader: Pin<Box<BufReader<T>>>,
@@ -104,6 +84,14 @@ async fn read_varint<R: Read, V: VarIntReadable>(reader: &mut Pin<Box<R>>) -> Re
     }
 }
 
+pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
+    todo!();
+}
+
+pub fn deserialize_relays(data: Vec<u8>) -> Vec<Relay> {
+    todo!();
+}
+
 pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     let mut b = [0u8; 1]; 
     reader.read_exact(&mut b[0..1]);
@@ -142,7 +130,7 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
         },
         // Current
         2 => Target::Current,
-        _ => panic!("invalid target"),
+        _ => return Err(Error::new(ErrorKind::InvalidData, "invalid tgt")),
     };
 
 
@@ -156,27 +144,19 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     let mut message_raw: Vec<u8> = vec![0u8; message_len as usize];
     reader.read_exact(&mut message_raw[..]).await?;
 
-    /*let message = match msgt {
-        MessageType::HelloRequest.to_u8() => {
-            if message_len != 32 {
-                return Err(Error::new(ErrorKind::InvalidData, "hello had a non-32 byte key"));
-            }
-            Message::HelloRequest(message_raw[0..32])
-        },
-        /* HelloResponse
-        1 => {},
-        // Close
-        2 => {},
-        // Payload
-        3 => {},
-        // GetRelaysRequest
-        4 => {},
-        // GetRelaysResponse
-        
-
-        5 => {},*/
-        _ => panic!("bruh moment"),
-    };*/
+    let message = match msgt {
+        0 => Message::HelloRequest(message_raw.try_into()
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid hello request message length"))?),
+        1 => Message::HelloResponse(message_raw.try_into()
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid hello response message length"))?),
+        2 => Message::Close(if message_len > 0 {Some(String::from_utf8_lossy(&message_raw).to_string())} else {None}),
+        3 => Message::Payload(message_raw),
+        4 => Message::GetRelaysRequest(),
+        5 => Message::GetRelaysResponse(deserialize_relays(message_raw)),
+        6 => Message::RelayPingRequest(),
+        7 => Message::RelayPingResponse(),
+        _ => panic!("illegal message id"),
+    };
 
     panic!("not yet implemented");
 }
