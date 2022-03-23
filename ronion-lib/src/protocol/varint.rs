@@ -13,12 +13,19 @@ pub(super) trait VarIntReadable {
 
     /// Reads a VarInt from a buffer.
     /// Returns either an error or a tuple of (value, bytes_read).
-    fn read_varint(b: &[u8]) -> Result<(Self::Target, usize), Error>;
+    fn from_varint(b: &[u8]) -> Result<(Self::Target, usize), Error>;
 }
 pub(super) trait VarIntWritable {
+    type MaxArray;
+
     /// Writes a VarInt into a buffer.
     /// Returns either an error or the amount of bytes written.
     fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error>;
+    fn to_varint(&self) -> (Self::MaxArray, usize);
+}
+
+const fn div_ceil(v: usize, d: usize) -> usize {
+    v / d + if v % d == 0 {0} else {1}
 }
 
 macro_rules! unsigned_impl {
@@ -26,7 +33,7 @@ macro_rules! unsigned_impl {
        impl VarIntReadable for $t {
             type Target = $t;
 
-           fn read_varint(b: &[u8]) -> Result<(Self::Target, usize), Error> {
+           fn from_varint(b: &[u8]) -> Result<(Self::Target, usize), Error> {
                 let mut value: $t = 0;
                 let mut more = 1u8;
                 let mut i = 0;
@@ -49,6 +56,8 @@ macro_rules! unsigned_impl {
         }
 
         impl VarIntWritable for $t {
+            type MaxArray = [u8; div_ceil(<$t>::BITS as usize, 7)];
+
            fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error> {
                 let mut value = self.to_le();
                 let mut i = 0;
@@ -65,6 +74,12 @@ macro_rules! unsigned_impl {
                 // reset the 'more' bit on the final byte
                 b[i - 1].write_bits(7, 0, 1);
                 Ok(i)
+           }
+
+           fn to_varint(&self) -> (Self::MaxArray, usize) {
+               let mut array: Self::MaxArray;
+               let bytes = self.write_varint(&mut array).unwrap();
+               (array, bytes)
            }
        }
     };
@@ -99,7 +114,7 @@ mod tests {
     fn read_varint_u32() {
         let buf = [0b10110011, 0b11010100, 0b00000010];
         
-        let (value, bytes) = u32::read_varint(&buf).unwrap();
+        let (value, bytes) = u32::from_varint(&buf).unwrap();
         
         assert_eq!(value, 0b10_1010100_0110011u32);
         assert_eq!(bytes, 3);
@@ -110,7 +125,7 @@ mod tests {
         let more = 1u8 << 7;
         let buf = [more; 16];
 
-        let value = u32::read_varint(&buf).unwrap_err();
+        let value = u32::from_varint(&buf).unwrap_err();
         
         assert_eq!(value, Error::Overflow);
     }
@@ -119,7 +134,7 @@ mod tests {
     fn read_varint_u32_malformed() {
         let buf = [0b10000000];
         
-        let err = u32::read_varint(&buf).unwrap_err();
+        let err = u32::from_varint(&buf).unwrap_err();
         
         assert_eq!(err, Error::Malformed);
     }
@@ -138,8 +153,20 @@ mod tests {
         let mut buf = [0u8; 5];
         let expected = 0xDEADBEEF;
         expected.write_varint(&mut buf).unwrap();
-        let (actual, _) = u32::read_varint(&buf).unwrap();
+        let (actual, _) = u32::from_varint(&buf).unwrap();
         
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn to_varint_u32_max() {
+        let (array, bytes) = u32::MAX.to_varint();
+        assert_eq!(bytes, 5); 
+    }
+
+    #[test]
+    fn to_varint_u128_max() {
+        let (array, bytes) = u128::MAX.to_varint();
+        assert_eq!(bytes, 19);
     }
 }

@@ -1,4 +1,4 @@
-use super::{onion::{ Onion, Target, Relay }, varint};
+use super::{onion::{ Onion, Target, Relay }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
@@ -82,7 +82,7 @@ async fn read_varint<R: Read, V: VarIntReadable>(reader: &mut Pin<Box<R>>) -> Re
     let mut i = 0;
     loop {
         reader.read_exact(&mut buf[i..i+1]).await?;
-        match V::read_varint(&buf) {
+        match V::from_varint(&buf) {
             Ok((value, _bytes)) => {
                 return Ok(value);
             },
@@ -98,7 +98,24 @@ async fn read_varint<R: Read, V: VarIntReadable>(reader: &mut Pin<Box<R>>) -> Re
 }
 
 pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
-    todo!();
+    let buf = [0u8; 64];
+    let vec = Vec::new();
+    for relay in relays {    
+        let (ip_bit, octets) = match relay.addr.ip() {
+            IpAddr::V4(v4) => (0, &v4.octets()[..]),
+            IpAddr::V6(v6) => (1, &v6.octets()[..])
+        };
+        
+        let leading = 0u8;
+        let (id, id_bytes) = relay.id.to_varint();
+
+        leading.write_bits(7, ip_bit, 1);
+        vec.push(leading);
+        vec.extend(octets.iter());
+        vec.extend(id[0..id_bytes].iter());
+    }
+
+    vec
 }
 
 pub fn deserialize_relays(data: Vec<u8>) -> Vec<Relay> {
