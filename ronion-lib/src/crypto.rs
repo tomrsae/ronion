@@ -55,11 +55,10 @@ impl ServerSecret {
     }
     
     /// Combines secret and peer public key into a SymmetricCipher.
-    pub fn symmetric_cipher(self, peer_public: [u8; 32]) -> Box<dyn SymmetricCipher> {
+    pub fn symmetric_cipher(self, peer_public: [u8; 32]) -> Aes256 {
         let peer_public = PublicKey::from(peer_public);
         let shared_secret = self.secret.diffie_hellman(&PublicKey::from(peer_public));
-        let cipher = Aes256::new(GenericArray::from_slice(&shared_secret.to_bytes()));
-        Box::new(cipher)
+        Aes256::new(GenericArray::from_slice(&shared_secret.to_bytes()))
     }
 }
 
@@ -112,14 +111,14 @@ impl ClientSecret {
     }
 
     ///Combines secret and public key of peer to a SymmetricCipher.
-    pub fn symmetric_cipher(self, peer_public: [u8; 96]) -> Result<Box<dyn SymmetricCipher>, SignatureError> {
+    pub fn symmetric_cipher(self, peer_public: [u8; 96]) -> Result<Aes256, SignatureError> {
         let key: [u8; 32] = peer_public[0..32].try_into().unwrap();
         let signature = Signature::from_bytes(&peer_public[32..96]).map_err(|_| SignatureError::InvalidData)?;
         self.verifier.verify(&key, &signature).map_err(|_| SignatureError::InvalidSignature)?;
 
         let shared_secret = self.secret.diffie_hellman(&PublicKey::from(key));
         let cipher = Aes256::new(GenericArray::from_slice(&shared_secret.to_bytes()));
-        Ok(Box::new(cipher))
+        Ok(cipher)
     }
 }
 
