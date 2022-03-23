@@ -26,41 +26,6 @@ impl SymmetricCipher for Aes256 {
     }
 }
 
-impl Secret {
-    pub fn new(peer_public_key: [u8; 32]) -> Self {
-        Secret {
-            secret: EphemeralSecret::new(OsRng),
-            peer_public_key,
-        }
-    }
-
-    pub fn create_secrets(n: usize, peer_public_keys: Vec<[u8; 32]>) -> Vec<Secret> {
-        (0..n)
-            .into_iter()
-            .map(|i| Secret::new(peer_public_keys[i]))
-            .collect()
-    }
-
-    //Should be sent to the other peer. Must be generated/used before shared key
-    //since shared key consumes the secret.
-    pub fn gen_pub_key(&self) -> PublicKey {
-        PublicKey::from(&self.secret)
-    }
-
-    //For messaging
-    pub fn gen_symmetric_cipher(self) -> Aes256 {
-        Secret::gen_cipher(
-            self.secret
-                .diffie_hellman(&PublicKey::from(self.peer_public_key))
-                .as_bytes(),
-        )
-    }
-
-    fn gen_cipher(byte_key: &[u8; 32]) -> Aes256 {
-        Aes256::new_from_slice(byte_key).expect("Invalid key length")
-    }
-}
-
 enum KeypairError {
     InvalidData,
 }
@@ -125,7 +90,7 @@ impl ServerCrypto {
         self.keypair.public.to_bytes()
     }
 
-    /// Generate a new secret key.
+    /// Generate a new secret.
     pub fn gen_secret(&self) -> ServerSecret {
         ServerSecret {
             secret: EphemeralSecret::new(&mut OsRng{}),
