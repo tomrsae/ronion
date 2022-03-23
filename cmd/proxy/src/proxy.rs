@@ -1,3 +1,7 @@
+use shadowsocks::relay::socks5::{
+    self, Command, HandshakeResponse, TcpRequestHeader, TcpResponseHeader, SOCKS5_AUTH_METHOD_NONE,
+};
+use shadowsocks::relay::Address;
 use shadowsocks::{
     self,
     context::Context,
@@ -8,8 +12,10 @@ use shadowsocks::{
     },
     ServerConfig,
 };
-
+use std::io;
+use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -37,28 +43,86 @@ impl Proxy {
     pub async fn serve_consumers(&mut self, context: Arc<Context>, svr_cfg: &ServerConfig) -> () {
         let listener = ProxyListener::bind(context, svr_cfg).await.unwrap();
         loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            let _ = self.handle_connection(stream);
+            let (stream, target_addr) = listener.accept().await.unwrap();
+            println!("-------------NEW CONNECTION");
+            let inner = stream.into_inner();
+            self.handle_connection(inner, target_addr).await;
         }
     }
 
-    async fn handle_connection(&mut self, stream: ProxyServerStream<TcpStream>) -> () {
+    async fn handle_connection(&mut self, mut stream: TcpStream, target_addr: SocketAddr) -> () {
+        stream = Proxy::handshake(stream, target_addr).await.unwrap();
         let (mut reader, mut writer) = stream.into_split();
-        let _ = self.send_consumer(&mut reader);
-        let _ = self.recv_consumer(&mut writer);
+        self.send_consumer(&mut reader); //Seperate sending task
+        self.recv_consumer(&mut writer); //Seperate recieving task
     }
 
-    async fn send_consumer(&mut self, stream: &mut ProxyServerStreamReadHalf<TcpStream>) -> () {
+    async fn handshake(mut stream: TcpStream, target_addr: SocketAddr) -> io::Result<TcpStream> {
+        println!("-------------NEW STREAM");
+        let handshake_req = socks5::HandshakeRequest::read_from(&mut stream)
+            .await
+            .unwrap();
+
+        println!("Req: {:?}", handshake_req.methods);
+
+        for method in handshake_req.methods.iter() {
+            match *method {
+                socks5::SOCKS5_AUTH_METHOD_NONE => {
+                    println!("MONKE");
+                    let handshake_resp = HandshakeResponse::new(SOCKS5_AUTH_METHOD_NONE);
+                    handshake_resp.write_to(&mut stream).await.unwrap();
+                    break;
+                }
+                _ => {
+                    panic!("got unexpected method {}", method);
+                }
+            }
+        }
+
+        let header = match TcpRequestHeader::read_from(&mut stream).await {
+            Ok(h) => h,
+            Err(err) => {
+                println!(
+                    "failed to get TcpRequestHeader: {}, peer: {}",
+                    err, target_addr
+                );
+                let rh =
+                    TcpResponseHeader::new(err.as_reply(), Address::SocketAddress(target_addr));
+                rh.write_to(&mut stream).await.unwrap();
+                return Err(err.into());
+            }
+        };
+
+        println!("Header: {:?}", header);
+
+        match header.command {
+            Command::TcpConnect => {
+                println!("CONNECT {}", target_addr);
+
+                let header = TcpResponseHeader::new(
+                    socks5::Reply::Succeeded,
+                    Address::SocketAddress(target_addr),
+                );
+                header.write_to(&mut stream).await.unwrap();
+            }
+            _ => {
+                panic!("got unexpected command {:?}", header.command);
+            }
+        }
+
+        return Ok(stream);
+    }
+
+    async fn send_consumer(&mut self, stream: &mut OwnedReadHalf) -> () {
         loop {
             let mut payload = [0u8; 1024];
 
             stream.read(&mut payload).await.unwrap();
-
-            self.consumer.send_message(payload.to_vec()).await
+            self.consumer.send_message(payload.to_vec()).await;
         }
     }
 
-    async fn recv_consumer(&mut self, stream: &mut ProxyServerStreamWriteHalf<TcpStream>) -> () {
+    async fn recv_consumer(&mut self, stream: &mut OwnedWriteHalf) -> () {
         loop {
             let payload = self.consumer.recv_message().await;
 
