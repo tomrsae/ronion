@@ -1,7 +1,7 @@
 use super::{onion::{ Onion, Target, Relay }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use core::panic;
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, borrow::Borrow};
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
@@ -40,6 +40,7 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
         read_onion(&mut self.reader).await?;
         let len = read_varint::<BufReader<R>, u32>(&mut self.reader).await?;
         let mut buf: Vec<u8> = vec![0u8; len as usize];
+        self.cipher.decrypt(&mut buf);
         self.reader.read_exact(&mut buf[..]);
         read_onion(&mut Box::pin(Cursor::new(buf))).await
     }
@@ -110,7 +111,9 @@ pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
             IpAddr::V4(v4) => vec.extend(v4.octets().iter()),
             IpAddr::V6(v6) => vec.extend(v6.octets().iter())
         };
-        
+
+        vec.extend(relay.addr.port().to_be_bytes().iter());
+
         let (id, id_bytes) = relay.id.to_varint();
         vec.extend(id[0..id_bytes].iter());
     }
@@ -118,18 +121,36 @@ pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
     vec
 }
 
-pub fn deserialize_relays(data: &[u8]) -> Vec<Relay> {
+pub fn deserialize_relays(data: &[u8]) -> Result<Vec<Relay>> {
+    todo!();
+    /*    let range_err = Error::new(ErrorKind::InvalidData, "slice out of range");
     let vec = Vec::new();
+    
     while data.len() > 0 {
-        let ip_bit = data[0].read_bits(7, 1);
-        let ip = match ip_bit {
-//            0 => IpAddr::V4(Ipv4Addr::from(data[1..5].into())),
-//            1 => IpAddr::V6(Ipv6Addr::from(data[1..17].into())),
+        let ip_bit = data.get(0).ok_or(range_err)?.read_bits(7, 1);
+        data = &data[1..];
+
+        let (ip_bytes, ip) = match ip_bit {
+            0 => (4, IpAddr::V4(From::<[u8; 4]>::from(data[0..4].try_into().map_err(|_| range_err)?))),
+            1 => (16, IpAddr::V6(From::<[u8; 16]>::from(data[0..16].try_into().map_err(|_| range_err)?))), 
             _ => panic!("invalid ip bit")
         };
+        data = &data[ip_bytes..];
+
+        let port_bytes: [u8; 2] = data.get(0..2).ok_or(|_| range_err)?.try_into().unwrap(); 
+        let port = u16::from_be_bytes(data.get(0..2).map(|x| x.try_into()).ok_or(|_| range_err)?);
+        let (id, id_bytes) = u32::from_varint(&data[base..]).map_err(|_| Error::new(ErrorKind::InvalidData, "invalid varint"))?;
+        data = &data[2..];
+
+        vec.push(Relay {
+            id,
+            addr: SocketAddr::new(ip, port),
+        });
+
+        data = get(); 
     }
 
-    vec
+    Ok(vec)*/
 }
 
 pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
@@ -192,7 +213,7 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
         2 => Message::Close(if message_len > 0 {Some(String::from_utf8_lossy(&message_raw).to_string())} else {None}),
         3 => Message::Payload(message_raw),
         4 => Message::GetRelaysRequest(),
-        5 => Message::GetRelaysResponse(deserialize_relays(&message_raw)),
+        5 => Message::GetRelaysResponse(deserialize_relays(&message_raw)?),
         6 => Message::RelayPingRequest(),
         7 => Message::RelayPingResponse(),
         _ => panic!("illegal message id"),

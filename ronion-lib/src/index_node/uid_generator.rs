@@ -11,7 +11,7 @@ impl UIDGenerator {
         }
     }
 
-    pub fn get_uid(&self) -> u32 {
+    pub fn get_uid(&mut self) -> u32 {
         let pos = self.ids.iter().position(|val| !*val);
 
         match pos {
@@ -23,7 +23,7 @@ impl UIDGenerator {
         }
     }
 
-    pub fn clear_uid(&self, index: u32) {
+    pub fn clear_uid(&mut self, index: u32) {
         let mut val = self.ids.get_mut(index as usize);
         val = Some(&mut false);
     }

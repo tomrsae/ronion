@@ -16,12 +16,13 @@ pub(super) trait VarIntReadable {
     fn from_varint(b: &[u8]) -> Result<(Self::Target, usize), Error>;
 }
 pub(super) trait VarIntWritable {
-    type MaxArray;
+    const MAX_VARINT_LEN: usize;
+    type MaxVarIntArray;
 
     /// Writes a VarInt into a buffer.
     /// Returns either an error or the amount of bytes written.
     fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error>;
-    fn to_varint(&self) -> (Self::MaxArray, usize);
+    fn to_varint(&self) -> (Self::MaxVarIntArray, usize);
 }
 
 const fn div_ceil(v: usize, d: usize) -> usize {
@@ -56,7 +57,8 @@ macro_rules! unsigned_impl {
         }
 
         impl VarIntWritable for $t {
-            type MaxArray = [u8; div_ceil(<$t>::BITS as usize, 7)];
+            const MAX_VARINT_LEN: usize = div_ceil(<$t>::BITS as usize, 7);
+            type MaxVarIntArray = [u8; Self::MAX_VARINT_LEN];
 
            fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error> {
                 let mut value = self.to_le();
@@ -76,8 +78,8 @@ macro_rules! unsigned_impl {
                 Ok(i)
            }
 
-           fn to_varint(&self) -> (Self::MaxArray, usize) {
-               let mut array: Self::MaxArray;
+           fn to_varint(&self) -> (Self::MaxVarIntArray, usize) {
+               let mut array = [0u8; Self::MAX_VARINT_LEN];
                let bytes = self.write_varint(&mut array).unwrap();
                (array, bytes)
            }
@@ -160,13 +162,13 @@ mod tests {
 
     #[test]
     fn to_varint_u32_max() {
-        let (array, bytes) = u32::MAX.to_varint();
+        let (_array, bytes) = u32::MAX.to_varint();
         assert_eq!(bytes, 5); 
     }
 
     #[test]
     fn to_varint_u128_max() {
-        let (array, bytes) = u128::MAX.to_varint();
+        let (_array, bytes) = u128::MAX.to_varint();
         assert_eq!(bytes, 19);
     }
 }
