@@ -1,6 +1,6 @@
 use super::{onion::{ Onion, Target, Relay }, varint};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::DerefMut};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
@@ -16,7 +16,10 @@ impl<T: Read> RawOnionReader<T> {
     }
 
     pub fn with_cipher<C: SymmetricCipher>(self, cipher: C) -> OnionReader<T, C> {
-        OnionReader::new(self.reader, cipher)
+        OnionReader { 
+            reader: self.reader,
+            cipher,
+        }
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
@@ -31,8 +34,8 @@ pub struct OnionReader<R: Read, C: SymmetricCipher> {
 }
 
 impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
-    fn new(reader: Pin<Box<BufReader<R>>>, cipher: C) -> Self {
-        Self {reader, cipher}
+    async fn rvarint(r: &mut Pin<Box<R>>) {
+        read_varint::<R, u32>(r);
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
