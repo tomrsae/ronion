@@ -1,7 +1,7 @@
 use super::{onion::{ Onion, Target, Relay }, varint};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
-use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor};
+use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
 pub struct RawOnionReader<T: Read> { 
@@ -44,15 +44,31 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
     }
 }
 
+pub struct RawOnionWriter<T: Write> {
+    writer: Pin<Box<BufWriter<T>>>,
+}
+impl<T: Write> RawOnionWriter<T> {
+    pub fn new(writer: T) -> Self {
+        let writer = Box::pin(BufWriter::new(writer));
+        Self {writer}
+    }
+    pub fn with_cipher<C: SymmetricCipher>(self, cipher: C) -> OnionWriter<T, C> {
+        OnionWriter::new(self.writer, cipher)
+    }
+
+    pub async fn write(&mut self, onion: Onion) {
+        todo!();
+    }
+}
 
 pub struct OnionWriter<T: Write, C: SymmetricCipher> {
-    writer: T,
+    writer: Pin<Box<BufWriter<T>>>,
     cipher: C,
 }
 
 impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
-    pub fn new(writer: T, cipher: C) -> OnionWriter<T, C> {
-        OnionWriter { writer, cipher }
+    fn new(writer: Pin<Box<BufWriter<T>>>, cipher: C) -> Self {
+        Self {writer, cipher}
     }
 
     pub async fn write(&mut self, onion: Onion) -> Result<()> {
