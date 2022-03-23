@@ -1,7 +1,7 @@
 use super::{onion::{ Onion, Target, Relay }, varint};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
-use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::DerefMut};
+use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
 pub struct RawOnionReader<T: Read> { 
@@ -16,7 +16,10 @@ impl<T: Read> RawOnionReader<T> {
     }
 
     pub fn with_cipher<C: SymmetricCipher>(self, cipher: C) -> OnionReader<T, C> {
-        OnionReader::new(self.reader, cipher)
+        OnionReader { 
+            reader: self.reader,
+            cipher,
+        }
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
@@ -31,8 +34,8 @@ pub struct OnionReader<R: Read, C: SymmetricCipher> {
 }
 
 impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
-    fn new(reader: Pin<Box<BufReader<R>>>, cipher: C) -> Self {
-        Self {reader, cipher}
+    async fn rvarint(r: &mut Pin<Box<R>>) {
+        read_varint::<R, u32>(r);
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
@@ -44,31 +47,15 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
     }
 }
 
-pub struct RawOnionWriter<T: Write> {
-    writer: Pin<Box<BufWriter<T>>>,
-}
-impl<T: Write> RawOnionWriter<T> {
-    pub fn new(writer: T) -> Self {
-        let writer = Box::pin(BufWriter::new(writer));
-        Self {writer}
-    }
-    pub fn with_cipher<C: SymmetricCipher>(self, cipher: C) -> OnionWriter<T, C> {
-        OnionWriter::new(self.writer, cipher)
-    }
-
-    pub async fn write(&mut self, onion: Onion) {
-        todo!();
-    }
-}
 
 pub struct OnionWriter<T: Write, C: SymmetricCipher> {
-    writer: Pin<Box<BufWriter<T>>>,
+    writer: T,
     cipher: C,
 }
 
 impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
-    fn new(writer: Pin<Box<BufWriter<T>>>, cipher: C) -> Self {
-        Self {writer, cipher}
+    pub fn new(writer: T, cipher: C) -> OnionWriter<T, C> {
+        OnionWriter { writer, cipher }
     }
 
     pub async fn write(&mut self, onion: Onion) -> Result<()> {
