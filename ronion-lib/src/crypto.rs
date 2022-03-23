@@ -2,8 +2,8 @@ use aes::{
     cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit},
     Aes256,
 };
-use rand_core::OsRng;
 use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
+use rand_core::OsRng;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 pub trait SymmetricCipher {
@@ -30,7 +30,7 @@ enum KeypairError {
 #[derive(Debug)]
 enum SignatureError {
     InvalidData,
-    InvalidSignature
+    InvalidSignature,
 }
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ enum SigningPublicKeyError {
 
 pub struct ServerSecret {
     keypair: Keypair,
-    secret: EphemeralSecret
+    secret: EphemeralSecret,
 }
 impl ServerSecret {
     /// Gets the secret's signed public key.
@@ -49,11 +49,11 @@ impl ServerSecret {
         let signature = self.keypair.sign(&key).to_bytes();
         let target = [0u8; 96];
         for (dst, src) in target.iter().zip(key.iter().chain(signature.iter())) {
-           *dst = *src; 
+            *dst = *src;
         }
         target
     }
-    
+
     /// Combines secret and peer public key into a SymmetricCipher.
     pub fn symmetric_cipher(self, peer_public: [u8; 32]) -> Aes256 {
         let peer_public = PublicKey::from(peer_public);
@@ -70,19 +70,19 @@ impl ServerCrypto {
     /// Creates a ServerCrypto with a random signing keypair.
     pub fn new() -> Self {
         Self {
-            keypair: Keypair::generate(&mut OsRng{}),
+            keypair: Keypair::generate(&mut OsRng {}),
         }
     }
 
     /// Creates a ServerCrypto from signing keypair bytes.
     pub fn from_bytes(keypair_bytes: &[u8; 64]) -> Result<Self, KeypairError> {
         let keypair = Keypair::from_bytes(keypair_bytes).map_err(|_| KeypairError::InvalidData)?;
-        Ok(Self {keypair})
+        Ok(Self { keypair })
     }
 
     /// Converts the ServerCrypto's signing keypair to bytes.
     pub fn to_bytes(&self) -> [u8; 64] {
-       self.keypair.to_bytes()  
+        self.keypair.to_bytes()
     }
 
     /// Gets the signing public key.
@@ -93,7 +93,7 @@ impl ServerCrypto {
     /// Generate a new secret.
     pub fn gen_secret(&self) -> ServerSecret {
         ServerSecret {
-            secret: EphemeralSecret::new(&mut OsRng{}),
+            secret: EphemeralSecret::new(&mut OsRng {}),
             keypair: self.keypair,
         }
     }
@@ -113,8 +113,11 @@ impl ClientSecret {
     ///Combines secret and public key of peer to a SymmetricCipher.
     pub fn symmetric_cipher(self, peer_public: [u8; 96]) -> Result<Aes256, SignatureError> {
         let key: [u8; 32] = peer_public[0..32].try_into().unwrap();
-        let signature = Signature::from_bytes(&peer_public[32..96]).map_err(|_| SignatureError::InvalidData)?;
-        self.verifier.verify(&key, &signature).map_err(|_| SignatureError::InvalidSignature)?;
+        let signature =
+            Signature::from_bytes(&peer_public[32..96]).map_err(|_| SignatureError::InvalidData)?;
+        self.verifier
+            .verify(&key, &signature)
+            .map_err(|_| SignatureError::InvalidSignature)?;
 
         let shared_secret = self.secret.diffie_hellman(&PublicKey::from(key));
         let cipher = Aes256::new(GenericArray::from_slice(&shared_secret.to_bytes()));
@@ -124,21 +127,28 @@ impl ClientSecret {
 
 /// Provides client-side cryptography.
 pub struct ClientCrypto {
-    verifier: ed25519_dalek::PublicKey
+    verifier: ed25519_dalek::PublicKey,
 }
 impl ClientCrypto {
     /// Creates a ClientCrypto from the peer's signing public key.
     pub fn new(signing_public: &[u8; 32]) -> Result<Self, SigningPublicKeyError> {
         let verifier = ed25519_dalek::PublicKey::from_bytes(signing_public)
-                .map_err(|_| SigningPublicKeyError::InvalidData)?;
-        Ok(Self {verifier})
+            .map_err(|_| SigningPublicKeyError::InvalidData)?;
+        Ok(Self { verifier })
     }
 
     /// Generates a new secret.
     pub fn gen_secret(&self) -> ClientSecret {
-        ClientSecret { 
+        ClientSecret {
             verifier: self.verifier,
-            secret: EphemeralSecret::new(&mut OsRng{}),
+            secret: EphemeralSecret::new(&mut OsRng {}),
         }
+    }
+
+    pub fn gen_secrets(n: usize, signing_publics: Vec<[u8; 32]>) -> Vec<ClientSecret> {
+        (0..n)
+            .into_iter()
+            .map(|i| ClientCrypto::new(&signing_publics[i]).unwrap().gen_secret())
+            .collect()
     }
 }
