@@ -5,10 +5,6 @@ use aes::{
 use rand_core::OsRng;
 use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
 use x25519_dalek::{EphemeralSecret, PublicKey};
-pub struct Secret {
-    secret: EphemeralSecret,
-    peer_public_key: [u8; 32],
-}
 
 pub trait SymmetricCipher {
     fn encrypt(&self, block: &mut [u8]);
