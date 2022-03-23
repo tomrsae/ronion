@@ -31,7 +31,7 @@ pub enum Message {
 
 
 pub struct Onion {
-    pub target: Target,
-    pub circuid_id: Option<u32>,
+    pub circuit_id: Option<u32>,
     pub message: Message,
+    pub target: Target,
 }
