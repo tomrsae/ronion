@@ -8,7 +8,7 @@ use async_std::{
 
 use crate::{
     protocol::{
-        io::{OnionReader, OnionWriter, RawOnionReader},
+        io::{RawOnionWriter, RawOnionReader},
         onion::{Onion, Target, Message, Relay}
     }
 };
@@ -56,7 +56,7 @@ impl IndexNode {
     }
     
     async fn handle_connection(stream: TcpStream, context: Arc<Mutex<IndexContext>>) -> Result<()> {
-        let reader = RawOnionReader::new(&stream);
+        let mut reader = RawOnionReader::new(&stream);
 
         let hello = reader.read().await?;
         let peer_key = Self::get_peer_key(hello).await?;
@@ -70,11 +70,11 @@ impl IndexNode {
         }
 
         let symmetric_cipher = secret.symmetric_cipher(peer_key);
-        let received_onion = reader.with_cipher(symmetric_cipher).read().await?;
+        let received_onion = reader.with_cipher(symmetric_cipher.clone()).read().await?;
 
         let response = Self::handle_onion(received_onion, stream.peer_addr()?, context).await?;
         
-        OnionWriter::new(&stream, symmetric_cipher).write(response).await
+        RawOnionWriter::new(&stream).with_cipher(symmetric_cipher).write(response).await
     }
 
     async fn get_peer_key(hello: Onion) -> Result<[u8; 32]> {
@@ -93,7 +93,7 @@ impl IndexNode {
             Message::GetRelaysRequest() => {
                 Onion {
                     target: Target::Current,
-                    circuid_id: Some(context_locked.circ_id_generator.get_uid()),
+                    circuit_id: Some(context_locked.circ_id_generator.get_uid()),
                     message: Message::GetRelaysResponse(context_locked.available_relays.clone())
                 }
             },
@@ -109,15 +109,15 @@ impl IndexNode {
                 
                 Onion {
                     target: Target::Current,
-                    circuid_id: None,
+                    circuit_id: None,
                     message: Message::RelayPingResponse()
                 }
             },
             _ => Onion {
-                target: Target::Current,
-                circuid_id: None,
-                message: Message::Close(Some("Invalid request".to_string()))
-            }
+                    target: Target::Current,
+                    circuit_id: None,
+                    message: Message::Close(Some("Invalid request".to_string()))
+                }
         };
 
         Ok(reply)
