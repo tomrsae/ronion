@@ -1,5 +1,5 @@
 use crate::{
-    crypto::ClientCrypto,
+    crypto::{ClientCrypto, ClientSecret},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
         onion::{self, Message, Onion, Target},
@@ -39,7 +39,8 @@ impl Consumer {
         target_ids.remove(0);
         let entry_pub_key = peer_pub_keys.remove(0);
 
-        let mut cryptos = ClientCrypto::gen_secrets(n, Vec::<[u8; 32]>::new());
+        let pls_remove_me = [0u8; 32];
+        let mut cryptos: Vec<ClientSecret> = (0..n).into_iter().map(|_| ClientCrypto::new(&pls_remove_me).unwrap().gen_secret()).collect(); 
         let mut pub_keys = Vec::<[u8; 32]>::with_capacity(n);
         let mut ciphers = Vec::<Aes256>::with_capacity(n);
 

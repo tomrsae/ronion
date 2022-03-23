@@ -1,6 +1,7 @@
 use super::{onion::{ Onion, Target, Relay }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
+use core::panic;
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, borrow::Borrow};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
@@ -98,28 +99,37 @@ async fn read_varint<R: Read, V: VarIntReadable>(reader: &mut Pin<Box<R>>) -> Re
 }
 
 pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
-    let buf = [0u8; 64];
-    let vec = Vec::new();
+    let mut vec = Vec::new();
     for relay in relays {    
-        let (ip_bit, octets) = match relay.addr.ip() {
-            IpAddr::V4(v4) => (0, &v4.octets()[..]),
-            IpAddr::V6(v6) => (1, &v6.octets()[..])
-        };
-        
-        let leading = 0u8;
-        let (id, id_bytes) = relay.id.to_varint();
-
+        let mut leading = 0u8;
+        let ip_bit = if relay.addr.is_ipv6() {1} else {0};
         leading.write_bits(7, ip_bit, 1);
         vec.push(leading);
-        vec.extend(octets.iter());
+
+        match relay.addr.ip() {
+            IpAddr::V4(v4) => vec.extend(v4.octets().iter()),
+            IpAddr::V6(v6) => vec.extend(v6.octets().iter())
+        };
+        
+        let (id, id_bytes) = relay.id.to_varint();
         vec.extend(id[0..id_bytes].iter());
     }
 
     vec
 }
 
-pub fn deserialize_relays(data: Vec<u8>) -> Vec<Relay> {
-    todo!();
+pub fn deserialize_relays(data: &[u8]) -> Vec<Relay> {
+    let vec = Vec::new();
+    while data.len() > 0 {
+        let ip_bit = data[0].read_bits(7, 1);
+        let ip = match ip_bit {
+//            0 => IpAddr::V4(Ipv4Addr::from(data[1..5].into())),
+//            1 => IpAddr::V6(Ipv6Addr::from(data[1..17].into())),
+            _ => panic!("invalid ip bit")
+        };
+    }
+
+    vec
 }
 
 pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
@@ -182,7 +192,7 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
         2 => Message::Close(if message_len > 0 {Some(String::from_utf8_lossy(&message_raw).to_string())} else {None}),
         3 => Message::Payload(message_raw),
         4 => Message::GetRelaysRequest(),
-        5 => Message::GetRelaysResponse(deserialize_relays(message_raw)),
+        5 => Message::GetRelaysResponse(deserialize_relays(&message_raw)),
         6 => Message::RelayPingRequest(),
         7 => Message::RelayPingResponse(),
         _ => panic!("illegal message id"),

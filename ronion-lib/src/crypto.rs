@@ -47,8 +47,8 @@ impl ServerSecret {
     pub fn public_key(&self) -> [u8; 96] {
         let key = PublicKey::from(&self.secret).to_bytes();
         let signature = self.keypair.sign(&key).to_bytes();
-        let target = [0u8; 96];
-        for (dst, src) in target.iter().zip(key.iter().chain(signature.iter())) {
+        let mut target = [0u8; 96];
+        for (dst, src) in target.iter_mut().zip(key.iter().chain(signature.iter())) {
             *dst = *src;
         }
         target
@@ -94,7 +94,7 @@ impl ServerCrypto {
     pub fn gen_secret(&self) -> ServerSecret {
         ServerSecret {
             secret: EphemeralSecret::new(&mut OsRng {}),
-            keypair: self.keypair,
+            keypair: Keypair::from_bytes(&self.keypair.to_bytes()).unwrap(),
         }
     }
 }
@@ -143,12 +143,5 @@ impl ClientCrypto {
             verifier: self.verifier,
             secret: EphemeralSecret::new(&mut OsRng {}),
         }
-    }
-
-    pub fn gen_secrets(n: usize, signing_publics: Vec<[u8; 32]>) -> Vec<ClientSecret> {
-        (0..n)
-            .into_iter()
-            .map(|i| ClientCrypto::new(&signing_publics[i]).unwrap().gen_secret())
-            .collect()
     }
 }
