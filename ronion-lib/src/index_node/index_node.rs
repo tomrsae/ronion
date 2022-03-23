@@ -3,13 +3,12 @@ use async_std::{
     sync::{Arc, Mutex},
     prelude::*,
     net::{IpAddr, SocketAddr, TcpListener, TcpStream},
-    io::{Result, ReadExt}
+    io::{Result, Error, ErrorKind}
 };
 
 use crate::{
-    crypto::Secret,
     protocol::{
-        io::{OnionReader, OnionWriter},
+        io::{OnionReader, OnionWriter, RawOnionReader},
         onion::{Onion, Target, Message, Relay}
     }
 };
@@ -35,7 +34,7 @@ impl IndexNode {
         let socket = SocketAddr::new(self.ip, self.port);
         let listen_future = self.listen(socket);
         
-        task::block_on(listen_future);
+        task::block_on(listen_future); // bytte til async?
     }
 
     
@@ -57,20 +56,33 @@ impl IndexNode {
     }
     
     async fn handle_connection(stream: TcpStream, context: Arc<Mutex<IndexContext>>) -> Result<()> {
-        let (reader, writer) = &mut (&stream, &stream);
-        
-        let hello = OnionReader::new(reader, None).read().await?;
+        let reader = RawOnionReader::new(&stream);
 
-        let mut peer_key_buf = [0u8; 32];
-        reader.read_exact(&mut peer_key_buf).await?;
+        let hello = reader.read().await?;
+        let peer_key = Self::get_peer_key(hello).await?;
         
-        let secret = Secret::new(peer_key_buf);
-        let symmetric_cipher = secret.gen_symmetric_cipher();
-        let received_onion = OnionReader::new(reader, symmetric_cipher.clone()).read().await?;
+        let secret;
+        {
+            let mut guard = context.lock().await;
+            let context_locked = &mut *guard;
+
+            secret = context_locked.crypto.gen_secret();
+        }
+
+        let symmetric_cipher = secret.symmetric_cipher(peer_key);
+        let received_onion = reader.with_cipher(symmetric_cipher).read().await?;
+
+        let response = Self::handle_onion(received_onion, stream.peer_addr()?, context).await?;
         
-        let onion = Self::handle_onion(received_onion, stream.peer_addr()?, context).await?;
-        
-        OnionWriter::new(writer, symmetric_cipher).write(onion).await
+        OnionWriter::new(&stream, symmetric_cipher).write(response).await
+    }
+
+    async fn get_peer_key(hello: Onion) -> Result<[u8; 32]> {
+        if let Message::HelloRequest(key) = hello.message {
+            Ok(key)
+        } else {
+            Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
+        }
     }
     
     async fn handle_onion(onion: Onion, peer_addr: SocketAddr, context: Arc<Mutex<IndexContext>>) -> Result<Onion> {
@@ -104,7 +116,7 @@ impl IndexNode {
             _ => Onion {
                 target: Target::Current,
                 circuid_id: None,
-                message: Message::Close("Invalid request".to_string())
+                message: Message::Close(Some("Invalid request".to_string()))
             }
         };
 
