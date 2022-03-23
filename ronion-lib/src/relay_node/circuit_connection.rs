@@ -1,3 +1,2 @@
 pub struct CircuitConnection {
-    pub 
 }
