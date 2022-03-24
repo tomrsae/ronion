@@ -37,11 +37,12 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
     }
 
     pub async fn read(&mut self) -> Result<Onion> {
-        read_onion(&mut self.reader).await?;
         let len = read_varint::<BufReader<R>, u32>(&mut self.reader).await?;
+        println!("<< ENCRYPTED ONION OF LENGTH: {}", len);
         let mut buf: Vec<u8> = vec![0u8; len as usize];
+        println!("<< ONION: {:?}", buf);
+        self.reader.read_exact(&mut buf).await?;
         self.cipher.decrypt(&mut buf);
-        self.reader.read_exact(&mut buf[..]);
         read_onion(&mut Box::pin(Cursor::new(buf))).await
     }
 }
@@ -74,7 +75,20 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
     }
 
     pub async fn write(&mut self, onion: Onion) -> Result<()> {
-        panic!("not yet implemented");
+        let mut cursor = Cursor::new(Vec::new());
+        write_onion(&mut Box::pin(BufWriter::new(cursor.get_mut())), onion).await?;
+        let mut plain_onion = cursor.into_inner();
+        self.cipher.encrypt(&mut plain_onion);
+        println!(">> ENCRYPTED ONION OF LENGTH: {}", plain_onion.len());
+
+        let (len_vi, len_vi_bytes) = (plain_onion.len() as u32).to_varint();
+        let len_vi = &len_vi[..len_vi_bytes];
+        println!("<< ONION: {:?}", plain_onion);
+        self.writer.write_all(len_vi).await?;
+        self.writer.write_all(&plain_onion).await?;
+        self.writer.flush().await?;
+
+        Ok(())
     }
 }
 
@@ -313,6 +327,12 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
 mod tests {
     use super::*;
 
+    struct NoopSymmetricCipher {}
+    impl SymmetricCipher for NoopSymmetricCipher {
+        fn encrypt(&self, _block: &mut [u8]) {}
+        fn decrypt(&self, _block: &mut [u8]) {}
+    }
+
     macro_rules! onion_rw_test {
         ($name:ident, $onion:expr) => {
             #[async_std::test]
@@ -390,4 +410,26 @@ mod tests {
 
     onion_rw_message_test!(onion_read_write_message_relay_ping_request, Message::RelayPingRequest());
     onion_rw_message_test!(onion_read_write_message_relay_ping_response, Message::RelayPingResponse());
+
+    #[async_std::test]
+    async fn encrypted_onion_read_write() {
+        let mut cursor = Cursor::new(Vec::new());
+        let mut writer = RawOnionWriter::new(cursor.get_mut()).with_cipher(NoopSymmetricCipher{});
+
+        writer.write(Onion {
+            circuit_id: None,
+            target: Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(1,2,3,4)), 1337)),
+            message: Message::RelayPingRequest(),
+        }).await.unwrap();
+
+        cursor.set_position(0);
+        let mut reader = RawOnionReader::new(cursor).with_cipher(NoopSymmetricCipher{});
+        let onion = reader.read().await.unwrap();
+
+        assert_eq!(Onion {
+            circuit_id: None,
+            target: Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(1,2,3,4)), 1337)),
+            message: Message::RelayPingRequest(),
+        }, onion); 
+    }
 }
