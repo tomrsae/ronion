@@ -63,7 +63,8 @@ macro_rules! unsigned_impl {
            fn write_varint(&self, b: &mut [u8]) -> Result<usize, Error> {
                 let mut value = self.to_le();
                 let mut i = 0;
-                while value != 0 {
+                let mut more = true;
+                while more {
                     if i >= b.len() {
                         return Err(Error::Overflow);
                     }
@@ -72,6 +73,7 @@ macro_rules! unsigned_impl {
                     b[i].write_bits(0, bits, 8);
                     value >>= 7;
                     i += 1;
+                    more = value != 0;
                 }
                 // reset the 'more' bit on the final byte
                 b[i - 1].write_bits(7, 0, 1);
@@ -123,6 +125,15 @@ mod tests {
     }
 
     #[test]
+    fn read_varint_zero() {
+        let buf = [0u8];
+
+        let (value, bytes) = u32::from_varint(&buf).unwrap();
+
+        assert_eq!((value, bytes), (0, 1));
+    }
+
+    #[test]
     fn read_varint_u32_overflow() {
         let more = 1u8 << 7;
         let buf = [more; 16];
@@ -139,6 +150,15 @@ mod tests {
         let err = u32::from_varint(&buf).unwrap_err();
         
         assert_eq!(err, Error::Malformed);
+    }
+
+    #[test]
+    fn write_varint_u32_zero() {
+        let mut buf = [0xFFu8; 1];
+
+        0u32.write_varint(&mut buf).unwrap();
+
+        assert_eq!(buf, [0u8]);
     }
 
     #[test]
