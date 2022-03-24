@@ -22,7 +22,7 @@ use tokio::{
 };
 
 extern crate ronion_lib;
-use ronion_lib::consumer::Consumer;
+use ronion_lib::consumer_node::consumer::Consumer;
 
 pub struct Proxy {
     consumer: Consumer,
