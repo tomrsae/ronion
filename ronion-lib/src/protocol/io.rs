@@ -38,9 +38,7 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
 
     pub async fn read(&mut self) -> Result<Onion> {
         let len = read_varint::<BufReader<R>, u32>(&mut self.reader).await?;
-        println!("<< ENCRYPTED ONION OF LENGTH: {}", len);
         let mut buf: Vec<u8> = vec![0u8; len as usize];
-        println!("<< ONION: {:?}", buf);
         self.reader.read_exact(&mut buf).await?;
         self.cipher.decrypt(&mut buf);
         read_onion(&mut Box::pin(Cursor::new(buf))).await
@@ -79,11 +77,9 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
         write_onion(&mut Box::pin(BufWriter::new(cursor.get_mut())), onion).await?;
         let mut plain_onion = cursor.into_inner();
         self.cipher.encrypt(&mut plain_onion);
-        println!(">> ENCRYPTED ONION OF LENGTH: {}", plain_onion.len());
 
         let (len_vi, len_vi_bytes) = (plain_onion.len() as u32).to_varint();
         let len_vi = &len_vi[..len_vi_bytes];
-        println!("<< ONION: {:?}", plain_onion);
         self.writer.write_all(len_vi).await?;
         self.writer.write_all(&plain_onion).await?;
         self.writer.flush().await?;
@@ -101,11 +97,9 @@ async fn read_varint<R: Read, V: VarIntReadable>(reader: &mut Pin<Box<R>>) -> Re
         i += 1;
         match V::from_varint(&buf[..i]) {
             Ok((value, _bytes)) => {
-                println!("RETURNING!");
                 return Ok(value);
             },
             Err(varint::Error::Malformed) => {
-                println!("MALFORMED!");
                // not enough data, continue 
             },
             Err(varint::Error::Overflow) => {
@@ -144,7 +138,6 @@ pub fn deserialize_relays(mut data: &[u8]) -> Result<Vec<Relay>> {
     while data.len() > 0 {
         let ip_bit = data.get(0).ok_or_else(range_err)?.read_bits(7, 1);
         data = &data[1..];
-        println!("IP");
         let (ip_bytes, ip) = match ip_bit {
             0 => (4, IpAddr::V4(From::<[u8; 4]>::from(data.get(0..4).ok_or_else(range_err)?.try_into().unwrap()))),
             1 => (16, IpAddr::V6(From::<[u8; 16]>::from(data.get(0..16).ok_or_else(range_err)?.try_into().unwrap()))),  
@@ -220,7 +213,6 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     };
     
     let message_len: u32 = read_varint::<R, u32>(reader).await?;
-    println!("TARGET: {:?}, CIRCUIT_ID: {:?}, MSGLEN: {}", target, circuit_id, message_len);
 
     let mut message_raw: Vec<u8> = vec![0u8; message_len as usize];
     reader.read_exact(&mut message_raw[..]).await?;
@@ -277,7 +269,7 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
         Some(id) => (1, id.write_varint(&mut buf[circuit_id_index..]).unwrap()),
         None => (0, 0),
     };
-    println!("WR CIRCUIT_ID: {:?}", &buf[circuit_id_index..circuit_id_index+offset]);
+
     let message_len_index = circuit_id_index + offset;
 
     // TODO: refactor so this variable isnt needed
