@@ -1,12 +1,13 @@
 use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{
-        io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
+        io::{serialize_relays, OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
         onion::{self, Message, Onion, Target},
     },
 };
 use aes::Aes256;
 use async_std::{
+    fs::read,
     io::{Cursor, ReadExt, WriteExt},
     net::{IpAddr, TcpStream},
 };
@@ -40,7 +41,10 @@ impl Consumer {
         let entry_pub_key = peer_pub_keys.remove(0);
 
         let pls_remove_me = [0u8; 32];
-        let mut cryptos: Vec<ClientSecret> = (0..n).into_iter().map(|_| ClientCrypto::new(&pls_remove_me).unwrap().gen_secret()).collect(); 
+        let mut cryptos: Vec<ClientSecret> = (0..n)
+            .into_iter()
+            .map(|_| ClientCrypto::new(&pls_remove_me).unwrap().gen_secret())
+            .collect();
         let mut pub_keys = Vec::<[u8; 32]>::with_capacity(n);
         let mut ciphers = Vec::<Aes256>::with_capacity(n);
 
@@ -50,7 +54,7 @@ impl Consumer {
             ciphers.push(crypto.symmetric_cipher(peer_pub_keys[i]).unwrap());
         };
 
-        let (entry_reader, entry_writer) = Consumer::create_circuit(
+        let (entry_reader, entry_writer, ciphers) = Consumer::create_circuit(
             &entry_ip.to_string(),
             pub_keys,
             [0u8; 32],
@@ -142,25 +146,28 @@ impl Consumer {
         entry_pub_key: [u8; 32],
         targets: Vec<Target>, //targets[0] should always be Target::Current -> always the onion core
         circuit_id: Option<u32>,
-        ciphers: Vec<Aes256>,
     ) -> (
         OnionReader<TcpStream, Aes256>,
         OnionWriter<TcpStream, Aes256>,
+        Vec<Aes256>,
     ) {
-        let (entry_reader, mut entry_writer) = Consumer::dial(addr, entry_pub_key).await;
-
+        let (mut entry_reader, mut entry_writer) = Consumer::dial(addr, entry_pub_key).await;
+        let mut ciphers = Vec::<Aes256>::new();
+        let mut onion: Onion;
         for i in 0..targets.len() {
-            let onion = Onionizer::grow_onion(
+            onion = Onionizer::grow_circuit_onion(
                 targets[0..i + 1].to_vec(), //Should send copy
                 circuit_id,
-                ciphers[0..i + 1].to_vec(), //Should send copy
-                pub_keys[i].to_vec(),
+                &mut ciphers,
+                pub_keys[i],
             )
             .await;
-            let res = entry_writer.write(onion);
+            entry_writer.write(onion).await;
+            onion = entry_reader.read().await.unwrap();
+            onion = Onionizer::peel_circuit_onion(onion).await;
         }
 
-        (entry_reader, entry_writer)
+        (entry_reader, entry_writer, ciphers)
     }
 }
 
@@ -177,6 +184,13 @@ impl Onionizer {
             circuit_id,
             ciphers,
         }
+    }
+
+    async fn serialize_onion(onion: Onion, cipher: Aes256) -> Vec<u8> {
+        let writer = Cursor::new(Vec::<u8>::new());
+        let mut onion_writer = RawOnionWriter::new(writer.clone()).with_cipher(cipher);
+        onion_writer.write(onion).await.expect("");
+        writer.into_inner()
     }
 
     async fn onionize(
@@ -206,6 +220,35 @@ impl Onionizer {
         )
         .await
     }
+
+    pub async fn grow_circuit_onion(
+        mut targets: Vec<Target>,
+        circuit_id: Option<u32>,
+        ciphers: &mut Vec<Aes256>, //should be one less than targets
+        pub_key: [u8; 32],
+    ) -> Onion {
+        //Core is the newest value added to the vectors. It should be the hellorequest
+        let mut onion = Onion {
+            target: targets.remove(targets.len() - 1),
+            circuit_id,
+            message: Message::HelloRequest(pub_key),
+        };
+
+        let mut onion_load: Vec<u8>;
+        for i in 0..targets.len() - 1 {
+            onion_load =
+                Onionizer::serialize_onion(onion, ciphers[ciphers.len() - 1].clone()).await;
+            onion = Onion {
+                target: targets[targets.len() - 1 - i].clone(),
+                circuit_id,
+                message: Message::Payload(onion_load),
+            };
+        }
+
+        onion
+    }
+
+    pub async fn peel_circuit_onion(onion: Onion) -> Onion {}
 
     pub async fn grow_onion(
         mut targets: Vec<Target>,
