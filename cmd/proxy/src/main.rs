@@ -15,7 +15,7 @@ async fn main() {
     let context = Context::new_shared(ServerType::Local);
     let svr_cfg = ServerConfig::new(port, pw, cipmet);
 
-    proxy = Proxy::new(4).await;
+    proxy = Proxy::new().await;
     proxy.serve_consumers(context, &svr_cfg).await;
 }
 

@@ -29,14 +29,14 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub async fn new(n: usize) -> Self {
+    pub async fn new() -> Self {
         let index_pub_key: [u8; 32] = [
             //Hardcoded public index key
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let index_addr = "const ip:port";
-        let consumer = Consumer::new(index_pub_key, index_addr).await;
+        let consumer = Consumer::new(index_addr, index_pub_key).await;
         Proxy { consumer }
     }
 
