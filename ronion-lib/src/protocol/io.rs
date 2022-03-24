@@ -1,8 +1,8 @@
 use super::{onion::{ Onion, Target, Relay }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use core::panic;
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range};
-use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter};
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range, borrow::Borrow};
+use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter, WriteExt};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
 pub struct RawOnionReader<T: Read> { 
@@ -58,8 +58,8 @@ impl<T: Write> RawOnionWriter<T> {
         OnionWriter::new(self.writer, cipher)
     }
 
-    pub async fn write(&mut self, onion: Onion) {
-        todo!();
+    pub async fn write(&mut self, onion: Onion) -> Result<()> {
+        write_onion(&mut self.writer, onion).await
     }
 }
 
@@ -121,36 +121,35 @@ pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
     vec
 }
 
-pub fn deserialize_relays(data: &[u8]) -> Result<Vec<Relay>> {
-    todo!();
-    /*    let range_err = Error::new(ErrorKind::InvalidData, "slice out of range");
-    let vec = Vec::new();
+pub fn deserialize_relays(mut data: &[u8]) -> Result<Vec<Relay>> {
+    let range_err = || Error::new(ErrorKind::InvalidData, "slice out of range");
+    let mut vec = Vec::new();
     
     while data.len() > 0 {
-        let ip_bit = data.get(0).ok_or(range_err)?.read_bits(7, 1);
+        let ip_bit = data.get(0).ok_or_else(range_err)?.read_bits(7, 1);
         data = &data[1..];
 
         let (ip_bytes, ip) = match ip_bit {
-            0 => (4, IpAddr::V4(From::<[u8; 4]>::from(data[0..4].try_into().map_err(|_| range_err)?))),
-            1 => (16, IpAddr::V6(From::<[u8; 16]>::from(data[0..16].try_into().map_err(|_| range_err)?))), 
+            0 => (4, IpAddr::V4(From::<[u8; 4]>::from(data.get(0..4).ok_or_else(range_err)?.try_into().unwrap()))),
+            1 => (16, IpAddr::V6(From::<[u8; 16]>::from(data.get(0..16).ok_or_else(range_err)?.try_into().unwrap()))),  
             _ => panic!("invalid ip bit")
         };
         data = &data[ip_bytes..];
 
-        let port_bytes: [u8; 2] = data.get(0..2).ok_or(|_| range_err)?.try_into().unwrap(); 
-        let port = u16::from_be_bytes(data.get(0..2).map(|x| x.try_into()).ok_or(|_| range_err)?);
-        let (id, id_bytes) = u32::from_varint(&data[base..]).map_err(|_| Error::new(ErrorKind::InvalidData, "invalid varint"))?;
+        let port = u16::from_be_bytes(data.get(0..2).ok_or_else(range_err)?.try_into().unwrap()); 
         data = &data[2..];
+
+        let (id, id_bytes) = u32::from_varint(data).map_err(|_| Error::new(ErrorKind::InvalidData, "invalid varint"))?;
+        data = &data[id_bytes..];
+
 
         vec.push(Relay {
             id,
             addr: SocketAddr::new(ip, port),
         });
-
-        data = get(); 
     }
 
-    Ok(vec)*/
+    Ok(vec)
 }
 
 pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
@@ -219,6 +218,105 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
         _ => panic!("illegal message id"),
     };
 
-    panic!("not yet implemented");
+    Ok(Onion {circuit_id, message, target})
 }
 
+pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onion: Onion) -> Result<()> {
+    let mut buf = [0u8; 128];
+    let target_index = 1;
+
+    let (tgt, opt1, offset) = match onion.target {
+        Target::Relay(id) => {
+            let len = id.write_varint(&mut buf[1..]).unwrap();
+            (0, 0, len)
+        },
+        Target::IP(addr) => {
+            let (ip_len, opt1) = match addr.ip() {
+                IpAddr::V4(v4) => {
+                    let octets = v4.octets();
+                    buf[target_index..].iter_mut().zip(octets).for_each(|(dst, src)| *dst = src);
+                    (octets.len(), 0)
+                }
+                IpAddr::V6(v6) => {
+                    let octets = v6.octets();
+                    buf[target_index..].iter_mut().zip(octets).for_each(|(dst, src)| *dst = src);
+                    (octets.len(), 1)
+                }
+            };
+            let port_index = target_index + ip_len;
+            let port_bytes = addr.port().to_be_bytes();
+            buf[port_index..].iter_mut().zip(port_bytes).for_each(|(dst, src)| *dst = src);
+            (1, opt1, ip_len + port_bytes.len()) 
+        },
+        Target::Current => (2, 0, 0usize),
+    };
+
+    let circuit_id_index = target_index +  offset;
+    let (cip, offset) = match onion.circuit_id {
+        Some(id) => (1, id.write_varint(&mut buf[circuit_id_index..]).unwrap()),
+        None => (0, 0),
+    };
+
+    let message_len_index = circuit_id_index + offset;
+
+
+    let (msgt, message_len) = match onion.message {
+        Message::HelloRequest(ref data) => (0, data.len()),
+        Message::HelloResponse(ref data) => (1, data.len()),
+        Message::Close(ref text) => (2, text.as_ref().map_or(0, |x| x.len())), 
+        Message::Payload(ref data) => (3, data.len()),
+        Message::GetRelaysRequest() => (4, 0),
+        Message::GetRelaysResponse(ref data) => (5, data.len()),
+        Message::RelayPingRequest() => (6, 0),
+        Message::RelayPingResponse() => (7, 0)
+    };
+
+    buf[0].write_bits(5, msgt, 3);
+    buf[0].write_bits(3, cip, 1);
+    buf[0].write_bits(2, opt1, 1);
+    buf[0].write_bits(0, tgt, 2);
+
+    let message_index = message_len_index + message_len.write_varint(&mut buf[message_len_index..]).unwrap();
+
+    writer.write(&buf[..message_index]).await?;
+
+    match onion.message {
+        Message::HelloRequest(public_key) => writer.write(&public_key[..]).await?,
+        Message::HelloResponse(signed_public_key) => writer.write(&signed_public_key[..]).await?,
+        Message::Close(text) => writer.write(text.unwrap().as_bytes()).await?,
+        Message::Payload(data) => writer.write(&data[..]).await?,
+        Message::GetRelaysRequest() => 0,
+        Message::GetRelaysResponse(relays) => writer.write(&serialize_relays(&relays[..])).await?,
+        Message::RelayPingRequest() => 0,
+        Message::RelayPingResponse() => 0
+    };
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[async_std::test]
+    async fn written_onion_can_be_read() {
+        let mut cursor = Cursor::new(Vec::new());
+        let mut raw_writer = RawOnionWriter::new(cursor.get_mut());
+
+        raw_writer.write(Onion {
+            circuit_id: Some(100),
+            message: Message::Payload(Vec::from("With <3 from NTNU")),
+            target: Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(110, 120, 130, 140)), 1337)),
+        }).await.unwrap();
+
+
+        cursor.set_position(0);
+        let mut raw_reader = RawOnionReader::new(cursor);
+        let onion = raw_reader.read().await.unwrap();
+
+        assert_eq!(Some(100), onion.circuit_id);
+        assert_eq!(Message::Payload(Vec::from("With <3 from NTNU")), onion.message);
+        assert_eq!(Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(110, 120, 130, 140)), 1337)), onion.target);  
+    }
+
+}
