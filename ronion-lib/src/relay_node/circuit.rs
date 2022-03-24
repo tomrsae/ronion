@@ -9,7 +9,7 @@ use super::circuit_connection::CircuitConnection;
 pub struct Circuit {
     pub id: u32,
     pub peer_key: [u8; 32],
-    symmetric_cipher: Aes256,
+    pub symmetric_cipher: Aes256,
     pub public_key: [u8; 96]
 }
 
