@@ -12,7 +12,8 @@ pub enum Target {
 #[derive(Clone)]
 pub struct Relay {
     pub id: RelayID,
-    pub addr: SocketAddr
+    pub addr: SocketAddr,
+    pub pub_key: [u8; 32]
 }
 
 pub enum Message {

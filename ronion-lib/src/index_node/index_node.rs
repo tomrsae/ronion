@@ -72,7 +72,7 @@ impl IndexNode {
         let symmetric_cipher = secret.symmetric_cipher(peer_key);
         let received_onion = reader.with_cipher(symmetric_cipher.clone()).read().await?;
 
-        let response = Self::handle_onion(received_onion, stream.peer_addr()?, context).await?;
+        let response = Self::handle_onion(received_onion, stream.peer_addr()?, context, peer_key).await?;
         
         RawOnionWriter::new(&stream).with_cipher(symmetric_cipher).write(response).await
     }
@@ -85,7 +85,7 @@ impl IndexNode {
         }
     }
     
-    async fn handle_onion(onion: Onion, peer_addr: SocketAddr, context: Arc<Mutex<IndexContext>>) -> Result<Onion> {
+    async fn handle_onion(onion: Onion, peer_addr: SocketAddr, context: Arc<Mutex<IndexContext>>, peer_key: [u8; 32]) -> Result<Onion> {
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
 
@@ -103,7 +103,8 @@ impl IndexNode {
                 if existing_relay.is_none() {
                     context_locked.available_relays.push(Relay {
                         id: context_locked.relay_id_generator.get_uid(),
-                        addr: peer_addr
+                        addr: peer_addr,
+                        pub_key: peer_key
                     });
                 }
                 
