@@ -38,10 +38,10 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
 
     pub async fn read(&mut self) -> Result<Onion> {
         let len = read_varint::<BufReader<R>, u32>(&mut self.reader).await?;
-        let mut buf: Vec<u8> = vec![0u8; len as usize];
-        self.reader.read_exact(&mut buf).await?;
-        self.cipher.decrypt(&mut buf);
-        read_onion(&mut Box::pin(Cursor::new(buf))).await
+        let mut raw_onion: Vec<u8> = vec![0u8; len as usize];
+        self.reader.read_exact(&mut raw_onion).await?;
+        self.cipher.decrypt(&mut raw_onion);
+        read_onion(&mut Box::pin(Cursor::new(raw_onion))).await
     }
 }
 
@@ -75,13 +75,13 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
     pub async fn write(&mut self, onion: Onion) -> Result<()> {
         let mut cursor = Cursor::new(Vec::new());
         write_onion(&mut Box::pin(BufWriter::new(cursor.get_mut())), onion).await?;
-        let mut plain_onion = cursor.into_inner();
-        self.cipher.encrypt(&mut plain_onion);
+        let mut raw_onion = cursor.into_inner();
+        self.cipher.encrypt(&mut raw_onion);
 
-        let (len_vi, len_vi_bytes) = (plain_onion.len() as u32).to_varint();
+        let (len_vi, len_vi_bytes) = (raw_onion.len() as u32).to_varint();
         let len_vi = &len_vi[..len_vi_bytes];
         self.writer.write_all(len_vi).await?;
-        self.writer.write_all(&plain_onion).await?;
+        self.writer.write_all(&raw_onion).await?;
         self.writer.flush().await?;
 
         Ok(())
