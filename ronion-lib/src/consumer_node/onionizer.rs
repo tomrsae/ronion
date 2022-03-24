@@ -9,12 +9,12 @@ use crate::protocol::{
 };
 
 pub struct Onionizer {
-    targets: Vec<Target>,
+    targets: Vec<u32>,
     ciphers: Vec<Aes256>,
 }
 
 impl Onionizer {
-    pub fn new(targets: Vec<Target>, ciphers: Vec<Aes256>) -> Self {
+    pub fn new(targets: Vec<u32>, ciphers: Vec<Aes256>) -> Self {
         Onionizer { targets, ciphers }
     }
 
@@ -45,12 +45,12 @@ impl Onionizer {
         .await
     }
 
-    pub async fn grow_onion(mut onion: Onion, targets: Vec<Target>, ciphers: Vec<Aes256>) -> Onion {
+    pub async fn grow_onion(mut onion: Onion, target_ids: Vec<u32>, ciphers: Vec<Aes256>) -> Onion {
         let mut onion_load: Vec<u8>; //At this point targets and ciphers should be of equal length
-        for i in 0..targets.len() {
+        for i in 0..target_ids.len() {
             onion_load = Onionizer::onionize(onion, ciphers[ciphers.len() - 1 - i].clone()).await;
             onion = Onion {
-                target: targets[targets.len() - 1 - i].clone(),
+                target: Target::Relay(target_ids[target_ids.len() - 1 - i].clone()),
                 circuit_id: None,
                 message: Message::Payload(onion_load),
             };

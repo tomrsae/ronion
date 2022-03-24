@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{
@@ -21,30 +23,39 @@ pub struct Consumer {
 }
 
 impl Consumer {
-    pub async fn new(mut n: usize, index_pub_key: [u8; 32], index_addr: &str) -> Self {
-        let (mut index_reader, index_writer) = Consumer::dial(index_addr, index_pub_key).await;
+    pub async fn new(index_pub_key: [u8; 32], index_addr: &str) -> Self {
+        let (mut index_reader, mut index_writer) = Consumer::dial(index_addr, index_pub_key).await;
 
-        //index_writer.write(onion) //Write "I want n number of relays to connect to"
+        index_writer
+            .write(Onion {
+                circuit_id: None,
+                message: Message::GetRelaysRequest(),
+                target: Target::Current,
+            })
+            .await;
 
         let index_onion = index_reader.read().await.unwrap();
+        let relays = match index_onion.message {
+            Message::GetRelaysResponse(relays) => relays,
+            _ => panic!("Got unexpected message"),
+        };
+
         let num_relays: usize;
-        let mut peer_pub_keys: Vec<[u8; 32]>;
-        let mut target_ids: Vec<Target> = todo!();
-        let entry_ip: IpAddr;
-        let circuit_id = Some(2);
-        //Consumer::parse_index_onion(index_onion);
-        //check that num_relays match n
+        let mut target_ids = Vec::<u32>::new();
+        let mut target_ips = Vec::<SocketAddr>::new();
+        let mut peer_pub_keys = Vec::<[u8; 32]>::new();
+
+        relays.into_iter().map(|relay| {
+            target_ids.push(relay.id);
+            target_ips.push(relay.addr);
+            peer_pub_keys.push(relay.pub_key);
+        });
 
         //In general the higher the index in the vectors, the closer the value is to the onion core
         //This means targets[targets.len() -1] is the core, and targets[0] is always the outermost layer
 
-        n -= 1;
-        target_ids.remove(0);
-        let entry_pub_key = peer_pub_keys.remove(0);
-
         let (entry_reader, entry_writer, ciphers) =
-            Consumer::create_circuit(&entry_ip.to_string(), peer_pub_keys, target_ids.clone())
-                .await;
+            Consumer::create_circuit(target_ips, peer_pub_keys, target_ids.clone()).await;
 
         Consumer {
             entry_reader,
@@ -129,9 +140,9 @@ impl Consumer {
     //   to vector of ciphers.
     // - Return entry_reader, entry_writer and ciphers. Circuit is done
     async fn create_circuit(
-        addr: &str,
+        target_ips: Vec<SocketAddr>,
         mut peer_keys: Vec<[u8; 32]>,
-        targets: Vec<Target>, //targets[0] should always be Target::Current -> always the onion core
+        target_ids: Vec<u32>, //targets[0] should always be Target::Current -> always the onion core
     ) -> (
         OnionReader<TcpStream, Aes256>,
         OnionWriter<TcpStream, Aes256>,
@@ -143,21 +154,24 @@ impl Consumer {
         let mut ciphers = Vec::<Aes256>::new();
         let mut onion: Onion;
 
-        let (mut entry_reader, mut entry_writer) =
-            Consumer::dial(addr, peer_keys.remove(peer_keys.len() - 1)).await;
+        let (mut entry_reader, mut entry_writer) = Consumer::dial(
+            &target_ips[target_ips.len() - 1].to_string(),
+            peer_keys.remove(peer_keys.len() - 1),
+        )
+        .await;
 
-        for i in 0..targets.len() {
+        for i in 0..target_ids.len() {
             crypto = ClientCrypto::new(&peer_keys.remove(peer_keys.len() - 1)).unwrap();
             secret = crypto.gen_secret();
             secret_public = secret.public_key();
             onion = Onionizer::grow_onion(
                 Onion {
-                    target: targets[i].clone(),
+                    target: Target::Relay(target_ids[i].clone()),
                     circuit_id: None,
                     message: Message::HelloRequest(secret_public),
                 },
-                targets[0..i].to_vec(), //Should send copy
-                ciphers[0..i].to_vec(), //Empty first time
+                target_ids[0..i].to_vec(), //Should send copy
+                ciphers[0..i].to_vec(),    //Empty first time
             )
             .await;
             match entry_writer.write(onion).await {
