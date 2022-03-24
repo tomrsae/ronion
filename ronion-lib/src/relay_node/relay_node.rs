@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use aes::Aes256;
 use async_std::{
     io::{Error, ErrorKind, Result, Write},
@@ -11,12 +9,13 @@ use async_std::{
 
 use crate::{
     protocol::{
-        io::{RawOnionReader, RawOnionWriter, OnionWriter},
-        onion::{Message, Onion, Relay, Target},
-    }
+        io::{RawOnionReader, RawOnionWriter},
+        onion::{Message, Onion, Target},
+    },
+    crypto::ServerSecret
 };
 
-use super::{circuit::{Circuit, self}, circuit_connection::CircuitConnection, relay_context::RelayContext};
+use super::{circuit::{Circuit, self}, relay_context::RelayContext};
 
 pub struct RelayNode {
     ip: IpAddr,
@@ -67,42 +66,35 @@ impl RelayNode {
         let hello = reader.read().await?;
 
         let peer_key = Self::get_peer_key(hello).await?;
-        let (circuit_id, symmetric_cipher);
-        
-        if true { // replace literal
-            // Onion is from consumer, create circuit
-            let circuit = Self::generate_circuit(peer_key, context).await;
-            circuit_id = Some(circuit.id);
-            symmetric_cipher = circuit.symmetric_cipher();
-        } else {
-            // Onion is not from consumer, create tunnel
-            circuit_id = None;
-            todo!();
-        }
-        
-        let hello_response = Self::generate_hello_response(circuit.public_key, circuit_id);
-        
-        //////dfsgsdklfsdkfsdlfksdlkfsdflksdfksdkf
-        Self::send_onion(response, symmetric_cipher, &incoming_stream).await?;
 
-        Ok(())
-    }
-
-    async fn generate_circuit(peer_key: [u8; 32], context: Arc<Mutex<RelayContext>>) -> Circuit {
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
-        
-        let circuit_id = context_locked.circ_id_generator.get_uid();
         let secret = context_locked.crypto.gen_secret();
-        let circuit = Circuit::new(
-                                circuit_id,
-                                secret,
-                                peer_key,
-                            );
+        let pub_key = secret.public_key();
+        
+        let mut symmetric_cipher = secret.symmetric_cipher(peer_key);
+        let mut circuit_id = None;
+        if true { // replace literal
+            // Onion is from consumer, create circuit
+            circuit_id = Some(context_locked.circ_id_generator.get_uid());
+            
+            let circuit
+                = Circuit {
+                    id: circuit_id.unwrap(),
+                    peer_key: peer_key,
+                    symmetric_cipher: symmetric_cipher,
+                    public_key: pub_key
+                };
+            
+            symmetric_cipher = circuit.symmetric_cipher();
+            context_locked.circuits.insert(circuit_id.unwrap(), circuit);
+        }
+        drop(guard);
+        
+        let hello_response = Self::generate_hello_response(pub_key, circuit_id);
+        Self::send_onion(hello_response, symmetric_cipher, &incoming_stream).await?;
 
-        context_locked.circuits.insert(circuit_id, circuit.clone());
-
-        circuit
+        Ok(())
     }
 
     fn generate_hello_response(pub_key: [u8; 96], circ_id: Option<u32>) -> Onion {
