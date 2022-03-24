@@ -15,7 +15,10 @@ impl UIDGenerator {
         let pos = self.ids.iter().position(|val| !*val);
 
         match pos {
-            Some(id) => id as u32,
+            Some(id) => {
+                self.ids[id] = true;
+                id as u32
+            },
             None => {
                 self.ids.extend(vec![false; GROWTH]);
                 self.get_uid()

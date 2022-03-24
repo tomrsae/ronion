@@ -1,6 +1,4 @@
-use crate::{protocol::onion::Relay, crypto::{ServerCrypto}};
-
-use super::uid_generator::UIDGenerator;
+use crate::{protocol::onion::Relay, crypto::{ServerCrypto}, uid_generator::UIDGenerator};
 
 pub struct IndexContext {
     pub available_relays: Vec<Relay>,
