@@ -8,14 +8,17 @@ use async_std::{
 };
 
 use crate::{
+    crypto::ServerSecret,
     protocol::{
         io::{RawOnionReader, RawOnionWriter},
         onion::{Message, Onion, Target},
     },
-    crypto::ServerSecret
 };
 
-use super::{circuit::{Circuit, self}, relay_context::RelayContext};
+use super::{
+    circuit::{self, Circuit},
+    relay_context::RelayContext,
+};
 
 pub struct RelayNode {
     ip: IpAddr,
@@ -71,26 +74,26 @@ impl RelayNode {
         let context_locked = &mut *guard;
         let secret = context_locked.crypto.gen_secret();
         let pub_key = secret.public_key();
-        
+
         let mut symmetric_cipher = secret.symmetric_cipher(peer_key);
         let mut circuit_id = None;
-        if true { // replace literal
+        if true {
+            // replace literal
             // Onion is from consumer, create circuit
             circuit_id = Some(context_locked.circ_id_generator.get_uid());
-            
-            let circuit
-                = Circuit {
-                    id: circuit_id.unwrap(),
-                    peer_key: peer_key,
-                    symmetric_cipher: symmetric_cipher,
-                    public_key: pub_key
-                };
-            
+
+            let circuit = Circuit {
+                id: circuit_id.unwrap(),
+                peer_key: peer_key,
+                symmetric_cipher: symmetric_cipher,
+                public_key: pub_key,
+            };
+
             symmetric_cipher = circuit.symmetric_cipher();
             context_locked.circuits.insert(circuit_id.unwrap(), circuit);
         }
         drop(guard);
-        
+
         let hello_response = Self::generate_hello_response(pub_key, circuit_id);
         Self::send_onion(hello_response, symmetric_cipher, &incoming_stream).await?;
 
@@ -98,10 +101,10 @@ impl RelayNode {
     }
 
     fn generate_hello_response(pub_key: [u8; 96], circ_id: Option<u32>) -> Onion {
-        Onion { 
+        Onion {
             target: Target::Current,
-            circuit_id: circ_id, 
-            message: Message::HelloResponse(pub_key)
+            circuit_id: circ_id,
+            message: Message::HelloResponse(pub_key),
         }
     }
 

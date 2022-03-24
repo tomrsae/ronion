@@ -36,7 +36,7 @@ impl Proxy {
             25, 26, 27, 28, 29, 30, 31, 32,
         ];
         let index_addr = "const ip:port";
-        let consumer = Consumer::new(n, index_pub_key, index_addr).await;
+        let consumer = Consumer::new(index_pub_key, index_addr).await;
         Proxy { consumer }
     }
 
