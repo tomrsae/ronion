@@ -36,7 +36,8 @@ pub enum Message {
     RelayPingResponse(),
 }
 
-
+#[derive(PartialEq)]
+#[derive(Debug)]
 pub struct Onion {
     pub circuit_id: Option<u32>,
     pub message: Message,

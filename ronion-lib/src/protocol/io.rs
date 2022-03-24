@@ -111,8 +111,8 @@ pub fn serialize_relays(relays: &[Relay]) -> Vec<u8> {
             IpAddr::V4(v4) => vec.extend(v4.octets().iter()),
             IpAddr::V6(v6) => vec.extend(v6.octets().iter())
         };
-
         vec.extend(relay.addr.port().to_be_bytes().iter());
+        vec.extend(relay.pub_key.iter());
 
         let (id, id_bytes) = relay.id.to_varint();
         vec.extend(id[0..id_bytes].iter());
@@ -139,12 +139,15 @@ pub fn deserialize_relays(mut data: &[u8]) -> Result<Vec<Relay>> {
         let port = u16::from_be_bytes(data.get(0..2).ok_or_else(range_err)?.try_into().unwrap()); 
         data = &data[2..];
 
+        let pub_key = data.get(0..32).ok_or_else(range_err)?.try_into().unwrap();
+
         let (id, id_bytes) = u32::from_varint(data).map_err(|_| Error::new(ErrorKind::InvalidData, "invalid varint"))?;
         data = &data[id_bytes..];
 
 
         vec.push(Relay {
             id,
+            pub_key,
             addr: SocketAddr::new(ip, port),
         });
     }
@@ -154,13 +157,13 @@ pub fn deserialize_relays(mut data: &[u8]) -> Result<Vec<Relay>> {
 
 pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     let mut b = [0u8; 1]; 
-    reader.read_exact(&mut b[0..1]);
+    reader.read_exact(&mut b[0..1]).await?;
 
     let msgt = b[0].read_bits(5, 3);
     let cip = b[0].read_bits(3, 1);
     let opt1 = b[0].read_bits(2, 1);
     let tgt = b[0].read_bits(0, 2);
-    
+   
     let target = match tgt {
         // Relay
         0 => {
@@ -183,7 +186,7 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
                 },
             };
             let mut port_buf = [0u8; 2];
-            reader.read_exact(&mut port_buf);
+            reader.read_exact(&mut port_buf).await?;
             let port: u16 = u16::from_be_bytes(port_buf);
 
             Target::IP(SocketAddr::new(ip, port))
@@ -193,7 +196,6 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
         _ => return Err(Error::new(ErrorKind::InvalidData, "invalid tgt")),
     };
 
-
     let circuit_id = match cip {
         0 => None,
         1 => Some(read_varint::<R, u32>(reader).await?),
@@ -201,6 +203,7 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     };
 
     let message_len: u32 = read_varint::<R, u32>(reader).await?;
+
     let mut message_raw: Vec<u8> = vec![0u8; message_len as usize];
     reader.read_exact(&mut message_raw[..]).await?;
 
@@ -259,7 +262,6 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
 
     let message_len_index = circuit_id_index + offset;
 
-
     let (msgt, message_len) = match onion.message {
         Message::HelloRequest(ref data) => (0, data.len()),
         Message::HelloResponse(ref data) => (1, data.len()),
@@ -277,7 +279,6 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
     buf[0].write_bits(0, tgt, 2);
 
     let message_index = message_len_index + message_len.write_varint(&mut buf[message_len_index..]).unwrap();
-
     writer.write(&buf[..message_index]).await?;
 
     match onion.message {
@@ -291,12 +292,34 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
         Message::RelayPingResponse() => 0
     };
 
+    writer.flush().await?;
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    macro_rules! onion_rw_test {
+        ($name:ident, $onion:expr) => {
+            #[async_std::test]
+            async fn onion_rw_$name() {
+                let mut cursor = Cursor::new(Vec::new());
+                let mut raw_writer = RawOnionWriter::new(cursor.get_mut());
+
+                raw_writer.write(expr).await.unwrap();
+
+
+                cursor.set_position(0);
+                let mut raw_reader = RawOnionReader::new(cursor);
+                let onion = raw_reader.read().await.unwrap();
+
+                assert_eq!(expr, onion); 
+            }
+        }
+    }
+//    onion_rw_test!("CircuitID")
 
     #[async_std::test]
     async fn written_onion_can_be_read() {
@@ -314,9 +337,10 @@ mod tests {
         let mut raw_reader = RawOnionReader::new(cursor);
         let onion = raw_reader.read().await.unwrap();
 
-        assert_eq!(Some(100), onion.circuit_id);
-        assert_eq!(Message::Payload(Vec::from("With <3 from NTNU")), onion.message);
-        assert_eq!(Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(110, 120, 130, 140)), 1337)), onion.target);  
-    }
-
+        assert_eq!(Onion {
+            circuit_id: Some(100),
+            target: Target::IP(SocketAddr::new(IpAddr::from(Ipv4Addr::new(110, 120, 130, 140)), 1337)),
+            message: Message::Payload(Vec::from("With <3 from NTNU")), 
+        }, onion);
+    } 
 }
