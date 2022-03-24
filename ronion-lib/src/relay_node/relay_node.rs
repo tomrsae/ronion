@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use async_std::{
-    io::{Error, ErrorKind, Result},
+    io::{Error, ErrorKind, Result, Write},
     net::{IpAddr, SocketAddr, TcpListener, TcpStream},
     prelude::*,
     sync::{Arc, Mutex},
@@ -67,12 +67,12 @@ impl RelayNode {
         
         let peer_key = Self::get_peer_key(hello).await?;
         let circuit = Self::generate_circuit(peer_key, context).await;
+        let hello_response = Self::generate_hello_response(circuit.id, circuit.public_key);
 
-        RawOnionWriter::new(&incoming_stream)
-            .with_cipher(circuit.symmetric_cipher())
-            .write(Self::generate_hello_response(circuit.id, circuit.public_key))
-            .await?;
-            
+        Self::send_onion(hello_response, circuit, &incoming_stream).await?;
+        
+        //////dfsgsdklfsdkfsdlfksdlkfsdflksdfksdkf
+
         Ok(())
     }
 
@@ -93,26 +93,11 @@ impl RelayNode {
         circuit
     }
 
-    async fn handle_onion(onion: Onion, peer_addr: SocketAddr, context: Arc<Mutex<RelayContext>>) -> Result<Onion> {
-        let mut guard = context.lock().await;
-        let context_locked = &mut *guard;
-
-        let reply = match onion.message {
-            _ => Onion {
-                    target: Target::Current,
-                    circuit_id: None,
-                    message: Message::Close(Some("Invalid request".to_string()))
-                }
-        };
-
-        Ok(reply)
-    }
-
     fn generate_hello_response(circ_id: u32, pub_key: [u8; 96]) -> Onion {
         Onion { 
+            target: Target::Current,
             circuit_id: Some(circ_id), 
-            message: Message::HelloResponse(pub_key), 
-            target: Target::Current
+            message: Message::HelloResponse(pub_key)
         }
     }
 
@@ -122,5 +107,12 @@ impl RelayNode {
         } else {
             Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
         }
+    }
+
+    async fn send_onion<T: Write>(onion: Onion, circuit: Circuit, writer: T) -> Result<()> {
+        RawOnionWriter::new(writer)
+            .with_cipher(circuit.symmetric_cipher())
+            .write(onion)
+            .await
     }
 }
