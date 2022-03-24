@@ -49,7 +49,7 @@ impl Consumer {
         Consumer {
             entry_reader,
             entry_writer,
-            onionizer: Onionizer::new(target_ids, circuit_id, ciphers),
+            onionizer: Onionizer::new(target_ids, ciphers),
         }
     }
 
@@ -125,9 +125,9 @@ impl Consumer {
     // - Create clientcrypto(peer_public) and client secret.
     // - Grow circuit onion with HelloRequest(secret.public_key).
     // - Send and recieve onion
-    // - Peel onion and match Message type. If true create and add cipher
+    // - Peel onion and match Message type. If true, create and add cipher
     //   to vector of ciphers.
-    // - Return entry_reader, entry_writer and ciphers.
+    // - Return entry_reader, entry_writer and ciphers. Circuit is done
     async fn create_circuit(
         addr: &str,
         mut peer_keys: Vec<[u8; 32]>,
@@ -150,10 +150,14 @@ impl Consumer {
             crypto = ClientCrypto::new(&peer_keys.remove(peer_keys.len() - 1)).unwrap();
             secret = crypto.gen_secret();
             secret_public = secret.public_key();
-            onion = Onionizer::grow_circuit_onion(
-                targets[0..i + 1].to_vec(), //Should send copy
-                &mut ciphers,               //Empty first time
-                secret_public,
+            onion = Onionizer::grow_onion(
+                Onion {
+                    target: targets[i].clone(),
+                    circuit_id: None,
+                    message: Message::HelloRequest(secret_public),
+                },
+                targets[0..i].to_vec(), //Should send copy
+                ciphers[0..i].to_vec(), //Empty first time
             )
             .await;
             match entry_writer.write(onion).await {
@@ -161,7 +165,7 @@ impl Consumer {
                 Err(_e) => panic!("Write error"),
             };
             onion = entry_reader.read().await.unwrap();
-            onion = Onionizer::peel_circuit_onion(onion, &mut ciphers.clone()).await;
+            onion = Onionizer::peel_onion(onion, ciphers.clone()).await;
             ciphers.push(match onion.message {
                 Message::HelloResponse(signed_public_key) => {
                     secret.symmetric_cipher(signed_public_key).unwrap()

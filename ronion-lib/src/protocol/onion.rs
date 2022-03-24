@@ -3,19 +3,25 @@ use async_std::net::{SocketAddr};
 type RelayID = u32;
 
 #[derive(Clone)]
+#[derive(Debug)]
+#[derive(PartialEq)]
 pub enum Target {
     Relay(RelayID),
     IP(SocketAddr),
     Current,
 }
 
+#[derive(PartialEq)]
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct Relay {
     pub id: RelayID,
     pub addr: SocketAddr,
     pub pub_key: [u8; 32]
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
 pub enum Message {
     HelloRequest([u8; 32]),
     HelloResponse([u8; 96]),
