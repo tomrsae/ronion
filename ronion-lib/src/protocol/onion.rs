@@ -22,8 +22,23 @@ pub struct Relay {
 
 #[derive(PartialEq)]
 #[derive(Debug)]
+pub enum ClientType {
+    Consumer,
+    Relay,
+}
+
+#[derive(PartialEq)]
+#[derive(Debug)]
+pub struct HelloRequest {
+    pub client_type: ClientType,
+    pub public_key: [u8; 32],
+}
+
+
+#[derive(PartialEq)]
+#[derive(Debug)]
 pub enum Message {
-    HelloRequest([u8; 32]),
+    HelloRequest(HelloRequest),
     HelloResponse([u8; 96]),
 
     Close(Option<String>),

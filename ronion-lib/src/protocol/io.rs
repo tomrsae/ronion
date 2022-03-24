@@ -1,4 +1,4 @@
-use super::{onion::{ Onion, Target, Relay }, varint::{self, VarIntWritable}};
+use super::{onion::{ Onion, Target, Relay, ClientType, HelloRequest }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 use core::panic;
 use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range, borrow::Borrow};
@@ -218,8 +218,15 @@ pub async fn read_onion<R: Read>(reader: &mut Pin<Box<R>>) -> Result<Onion> {
     reader.read_exact(&mut message_raw[..]).await?;
 
     let message = match msgt {
-        0 => Message::HelloRequest(message_raw.try_into()
-                .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid hello request message length"))?),
+        0 => Message::HelloRequest(HelloRequest{
+            client_type: match message_raw[0].read_bits(7, 1) {
+                0 => ClientType::Relay,
+                1 => ClientType::Consumer,
+                _ => panic!("invalid client type"),
+            },
+            public_key: message_raw[1..].try_into()
+                .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid hello request message length"))?
+        }),
         1 => Message::HelloResponse(message_raw.try_into()
                 .map_err(|_| Error::new(ErrorKind::InvalidData, "invalid hello response message length"))?),
         2 => Message::Close(if message_len > 0 {Some(String::from_utf8_lossy(&message_raw).to_string())} else {None}),
@@ -275,7 +282,7 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
     // TODO: refactor so this variable isnt needed
     let mut message_vec = None;
     let (msgt, message_len) = match onion.message {
-        Message::HelloRequest(ref data) => (0, data.len()),
+        Message::HelloRequest(ref data) => (0, data.public_key.len() + 1),
         Message::HelloResponse(ref data) => (1, data.len()),
         Message::Close(ref text) => (2, text.as_ref().map_or(0, |x| x.as_bytes().len())), 
         Message::Payload(ref data) => (3, data.len()),
@@ -297,17 +304,26 @@ pub async fn write_onion<'a, W: Write>(writer: &mut Pin<Box<BufWriter<W>>>, onio
 
     let offset = message_len.write_varint(&mut buf[message_len_index..]).unwrap();
     let message_index = message_len_index + offset;
-    writer.write(&buf[..message_index]).await?;
+    writer.write_all(&buf[..message_index]).await?;
 
     match onion.message {
-        Message::HelloRequest(public_key) => writer.write(&public_key[..]).await?,
-        Message::HelloResponse(signed_public_key) => writer.write(&signed_public_key[..]).await?,
-        Message::Close(text) => writer.write(text.as_ref().map_or(&[] as &[u8], |x| x.as_bytes())).await?,
-        Message::Payload(data) => writer.write(&data[..]).await?,
-        Message::GetRelaysRequest() => 0,
-        Message::GetRelaysResponse(_relays) => writer.write(&message_vec.unwrap()).await?,
-        Message::RelayPingRequest() => 0,
-        Message::RelayPingResponse() => 0
+        Message::HelloRequest(req) => { 
+            let mut bitbuf = [0u8];
+            let client_bits = match req.client_type {
+                ClientType::Relay => 0,
+                ClientType::Consumer => 1,
+            };
+            bitbuf[0].write_bits(7, client_bits, 1);
+            writer.write_all(&bitbuf).await?;
+            writer.write_all(&req.public_key[..]).await?;
+       },
+        Message::HelloResponse(signed_public_key) => writer.write_all(&signed_public_key[..]).await?,
+        Message::Close(text) => writer.write_all(text.as_ref().map_or(&[] as &[u8], |x| x.as_bytes())).await?,
+        Message::Payload(data) => writer.write_all(&data[..]).await?,
+        Message::GetRelaysRequest() => (),
+        Message::GetRelaysResponse(_relays) => writer.write_all(&message_vec.unwrap()).await?,
+        Message::RelayPingRequest() => (),
+        Message::RelayPingResponse() => ()
     };
 
     writer.flush().await?;
@@ -374,7 +390,10 @@ mod tests {
 
     onion_rw_message_test!(
         onion_read_write_message_hello_request,
-        Message::HelloRequest([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1])
+        Message::HelloRequest(HelloRequest{
+            client_type: ClientType::Consumer,
+            public_key: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1],
+        })
     );
     
     onion_rw_message_test!(

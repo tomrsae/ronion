@@ -109,8 +109,8 @@ impl RelayNode {
     }
 
     async fn get_peer_key(hello: Onion) -> Result<[u8; 32]> {
-        if let Message::HelloRequest(key) = hello.message {
-            Ok(key)
+        if let Message::HelloRequest(req) = hello.message {
+            Ok(req.public_key)
         } else {
             Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
         }

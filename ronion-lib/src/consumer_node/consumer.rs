@@ -4,7 +4,7 @@ use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
-        onion::{Message, Onion, Target},
+        onion::{Message, Onion, Target, ClientType, HelloRequest},
     },
 };
 use aes::Aes256;
@@ -91,7 +91,10 @@ impl Consumer {
         raw_writer
             .write(Onion {
                 circuit_id: None,
-                message: Message::HelloRequest(pub_key),
+                message: Message::HelloRequest(HelloRequest{
+                    client_type: ClientType::Consumer,
+                    public_key: pub_key,
+                }),
                 target: Target::Current,
             })
             .await
@@ -177,7 +180,10 @@ impl Consumer {
             onion = Onionizer::grow_onion(
                 Onion {
                     circuit_id: None,
-                    message: Message::HelloRequest(secret_public),
+                    message: Message::HelloRequest(HelloRequest{
+                        client_type: ClientType::Consumer,
+                        public_key: secret_public
+                    }),
                     target: Target::Relay(target_ids[i].clone()),
                 },
                 target_ids[0..i].to_vec(), //Should send copy
