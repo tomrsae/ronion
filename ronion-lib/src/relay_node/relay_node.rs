@@ -12,7 +12,7 @@ use async_std::{
 use crate::{
     protocol::{
         io::{RawOnionReader, RawOnionWriter},
-        onion::{Message, Onion, Target},
+        onion::{Message, Onion, Target, HelloRequest, ClientType},
     },
 };
 
@@ -66,31 +66,30 @@ impl RelayNode {
     ) -> Result<()> {
         let mut reader = RawOnionReader::new(&incoming_stream);
 
-        let hello = reader.read().await?;
-
-        let peer_key = Self::get_peer_key(hello).await?;
+        let hello_onion = reader.read().await?;
+        let hello_req = Self::get_hello_req(hello_onion).await?;
 
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
         let secret = context_locked.crypto.gen_secret();
         
         let pub_key = secret.public_key();
-        let channel = Arc::new(Channel::new(secret.symmetric_cipher(peer_key)));
+        let channel = Arc::new(Channel::new(incoming_stream, secret.symmetric_cipher(hello_req.public_key)));
 
         let mut circuit_id = None;
-        if true {
-            // replace literal
-            // Onion is from consumer, create circuit
-            circuit_id = Some(context_locked.circ_id_generator.get_uid());
-            context_locked.circuits.insert(circuit_id.unwrap(), channel.clone());
-        } else {
-            // Onion is from relay, create tunnel
-            context_locked.tunnels.insert(incoming_stream.peer_addr()?, channel.clone());
+        match hello_req.client_type {
+            ClientType::Consumer => {
+                circuit_id = Some(context_locked.circ_id_generator.get_uid());
+                context_locked.circuits.insert(circuit_id.unwrap(), channel.clone());
+            },
+            ClientType::Relay => {
+                context_locked.tunnels.insert(channel.stream.peer_addr()?, channel.clone());
+            }
         }
         drop(guard);
         
         let hello_response = Self::generate_hello_response(pub_key, circuit_id);
-        Self::send_onion(hello_response, channel.symmetric_cipher(), &incoming_stream).await?;
+        Self::send_onion(hello_response, channel.symmetric_cipher(), &channel.stream).await?;
 
         channel.open().await;
 
@@ -105,9 +104,9 @@ impl RelayNode {
         }
     }
 
-    async fn get_peer_key(hello: Onion) -> Result<[u8; 32]> {
+    async fn get_hello_req(hello: Onion) -> Result<HelloRequest> {
         if let Message::HelloRequest(req) = hello.message {
-            Ok(req.public_key)
+            Ok(req)
         } else {
             Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
         }
