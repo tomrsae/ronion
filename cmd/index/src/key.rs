@@ -47,7 +47,7 @@ pub fn read_public() -> [u8; 32] {
     buf
 }
 
-pub fn read_pair() -> [u8; 64] {
+pub fn read_keypair() -> [u8; 64] {
     let file = file_from_env("RO_PRVKEY", "keyfile.prv.rkf").expect("unable to open keyfile"); 
     let mut buf = [0u8; 64];
     read_from_file(file, &mut buf).expect("unable to read from file");

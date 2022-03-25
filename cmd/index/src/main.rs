@@ -2,7 +2,7 @@ use std::{env, net::IpAddr};
 
 use core::index_node::index_node::IndexNode;
 
-use ronion_index::key::gen_keys;
+use ronion_index::key::{gen_keys, read_keypair};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -10,10 +10,11 @@ fn main() {
         gen_keys().expect("unable to generate keys");
         return;
     }
+    
 
-
+    let keypair = read_keypair();
     let (ip, port) = parse_arguments(args);
-    let node = IndexNode::new(ip, port);
+    let node = IndexNode::new(ip, port, keypair);
 
     node.start();
 }
