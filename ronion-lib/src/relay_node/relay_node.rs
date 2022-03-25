@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    relay_context::RelayContext, channel::Channel,
+    relay_context::RelayContext, channel::OnionChannel,
 };
 
 pub struct RelayNode {
@@ -74,7 +74,7 @@ impl RelayNode {
         let secret = context_locked.crypto.gen_secret();
         
         let pub_key = secret.public_key();
-        let channel = Arc::new(Channel::new(incoming_stream, secret.symmetric_cipher(hello_req.public_key)));
+        let channel = Arc::new(OnionChannel::new(incoming_stream, secret.symmetric_cipher(hello_req.public_key)));
 
         let mut circuit_id = None;
         match hello_req.client_type {
