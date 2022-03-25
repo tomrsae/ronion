@@ -16,14 +16,14 @@ impl SymmetricCipher for Aes256 {
     const BLOCK_SIZE: usize = 16;
 
     fn encrypt(&self, block: &mut [u8]) {
-        for chunk in block.chunks_mut(16) {
+        for chunk in block.chunks_mut(Self::BLOCK_SIZE) {
             self.encrypt_block(GenericArray::from_mut_slice(chunk));
         }
     }
 
     fn decrypt(&self, block: &mut [u8]) {
-        for chunk in block.chunks_mut(16) {
-            self.decrypt_block(GenericArray::from_mut_slice(block));
+        for chunk in block.chunks_mut(Self::BLOCK_SIZE) {
+            self.decrypt_block(&mut GenericArray::from_mut_slice(chunk));
         }
     }
 }
