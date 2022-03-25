@@ -1,5 +1,3 @@
-use std::{future::Future, net::SocketAddr};
-
 use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{

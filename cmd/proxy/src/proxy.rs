@@ -3,14 +3,7 @@ use shadowsocks::relay::socks5::{
 };
 use shadowsocks::relay::Address;
 use shadowsocks::{
-    self,
-    context::Context,
-    relay::tcprelay::{
-        proxy_listener::ProxyListener,
-        proxy_stream::{ProxyServerStreamReadHalf, ProxyServerStreamWriteHalf},
-        ProxyServerStream,
-    },
-    ServerConfig,
+    self, context::Context, relay::tcprelay::proxy_listener::ProxyListener, ServerConfig,
 };
 use std::io;
 use std::net::SocketAddr;
