@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "ronion-lib/",
+    "core/",
     "cmd/proxy/",
     "cmd/index/",
     "cmd/relay/",
