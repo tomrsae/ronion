@@ -2,12 +2,12 @@ use aes::Aes256;
 use async_std::net::TcpStream;
 
 #[derive(Clone)]
-pub struct Channel {
+pub struct OnionChannel {
     symmetric_cipher: Aes256,
     pub stream: TcpStream
 }
 
-impl Channel {
+impl OnionChannel {
     pub fn new(stream: TcpStream, symmetric_cipher: Aes256) -> Self {
         Self {
             symmetric_cipher: symmetric_cipher,
@@ -20,6 +20,6 @@ impl Channel {
     }
 
     pub async fn open(&self) {
-
+        
     }
 }
