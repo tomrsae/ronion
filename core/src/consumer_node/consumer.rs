@@ -19,10 +19,9 @@ pub struct Consumer {
 }
 
 impl Consumer {
-    pub async fn new(index_addr: &str) -> Self {
-        let stream = Consumer::dial(index_addr).await;
-        let mut index_reader = RawOnionReader::new(stream.clone());
-        let mut index_writer = RawOnionWriter::new(stream.clone());
+    pub async fn new(index_addr: String, index_pub_key: [u8; 32]) -> Self {
+        let (mut index_reader, mut index_writer) =
+            Consumer::dial_with_key(index_addr, index_pub_key).await;
 
         index_writer
             .write(Onion {
@@ -59,12 +58,12 @@ impl Consumer {
         }
     }
 
-    async fn dial(addr: &str) -> TcpStream {
+    async fn dial(addr: String) -> TcpStream {
         TcpStream::connect(addr).await.expect("")
     }
 
     async fn dial_with_key(
-        addr: &str,
+        addr: String,
         peer_pub_key: [u8; 32],
     ) -> (
         OnionReader<TcpStream, Aes256>,
@@ -155,7 +154,7 @@ impl Consumer {
         // Decrement all lists for the first onion tunnel (entry node)
         target_ids.remove(target_ids.len() - 1);
         let (mut entry_reader, mut entry_writer) = Consumer::dial_with_key(
-            &target_ips.remove(target_ips.len() - 1).to_string(),
+            target_ips.remove(target_ips.len() - 1).to_string(),
             peer_keys.remove(peer_keys.len() - 1),
         )
         .await;

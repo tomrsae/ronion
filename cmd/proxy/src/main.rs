@@ -1,28 +1,27 @@
 pub mod proxy;
 
-use std::{env, net::SocketAddr, str::FromStr, path::Path};
 use proxy::Proxy;
 use shadowsocks::{config::ServerType, context::Context, crypto::v1::CipherKind, ServerConfig};
+use std::{env, net::SocketAddr, path::Path, str::FromStr};
 
 #[tokio::main]
 async fn main() {
     //Argument order: ip:port (incoming), password, encryption-method, "start"
     let args: Vec<String> = env::args().collect();
-    let (port, pw, cipmet) = parse_input(args);
+    let (host_addr, pw, index_addr) = parse_input(args);
 
     let mut proxy: Proxy;
     let context = Context::new_shared(ServerType::Local);
-    let svr_cfg = ServerConfig::new(port, pw, cipmet);
+    let svr_cfg = ServerConfig::new(host_addr, pw, CipherKind::AES_256_GCM);
 
-
-    proxy = Proxy::new().await;
+    proxy = Proxy::new(index_addr).await;
     proxy.serve_consumers(context, &svr_cfg).await;
 }
 
-fn parse_input(args: Vec<String>) -> (SocketAddr, String, CipherKind) {
-    let addr = args[1].parse::<SocketAddr>().unwrap();
+fn parse_input(args: Vec<String>) -> (SocketAddr, String, String) {
+    let host_addr = args[1].parse::<SocketAddr>().unwrap();
     let pw = args[2].clone();
-    let cipmet = CipherKind::from_str(&args[3]).unwrap();
+    let index_addr = args[3].clone();
 
-    (addr, pw, cipmet)
+    (host_addr, pw, index_addr)
 }

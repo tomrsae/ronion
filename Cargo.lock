@@ -1366,6 +1366,7 @@ name = "ronion_proxy"
 version = "0.1.0"
 dependencies = [
  "core",
+ "ronion_index",
  "shadowsocks",
  "tokio",
 ]

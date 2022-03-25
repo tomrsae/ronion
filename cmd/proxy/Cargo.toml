@@ -8,3 +8,4 @@ edition = "2021"
 shadowsocks = "1.14.0"
 tokio = { version = "1.17.0", features = ["full"] }
 core = { path = "../../core" }
+ronion_index = { path = "../index" }
