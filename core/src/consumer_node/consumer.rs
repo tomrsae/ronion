@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{future::Future, net::SocketAddr};
 
 use crate::{
     crypto::{ClientCrypto, ClientSecret},
@@ -59,11 +59,11 @@ impl Consumer {
         }
     }
 
-    pub async fn dial(addr: &str) -> TcpStream {
+    async fn dial(addr: &str) -> TcpStream {
         TcpStream::connect(addr).await.expect("")
     }
 
-    pub async fn dial_with_key(
+    async fn dial_with_key(
         addr: &str,
         peer_pub_key: [u8; 32],
     ) -> (
@@ -73,7 +73,7 @@ impl Consumer {
         Consumer::handshake(&mut Consumer::dial(addr).await, peer_pub_key).await
     }
 
-    pub async fn handshake(
+    async fn handshake(
         stream: &mut TcpStream,
         peer_pub_key: [u8; 32],
     ) -> (
@@ -121,10 +121,7 @@ impl Consumer {
 
     pub async fn send_message(&mut self, payload: Vec<u8>) -> () {
         let onion = self.onionizer.grow_onion_relay(payload).await;
-        self.entry_writer
-            .write(onion)
-            .await
-            .expect("entry writer failed");
+        self.entry_writer.write(onion).await.unwrap();
     }
 
     pub async fn recv_message(&mut self) -> Vec<u8> {

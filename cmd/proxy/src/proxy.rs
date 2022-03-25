@@ -14,7 +14,7 @@ use shadowsocks::{
 };
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -24,13 +24,13 @@ use tokio::{
 use core::consumer_node::consumer::Consumer;
 
 pub struct Proxy {
-    consumer: Consumer,
+    consumer: Arc<Mutex<Consumer>>,
 }
 
 impl Proxy {
     pub async fn new() -> Self {
         let index_addr = "const ip:port";
-        let consumer = Consumer::new(index_addr).await;
+        let consumer = Arc::new(Mutex::new(Consumer::new(index_addr).await));
         Proxy { consumer }
     }
 
@@ -112,14 +112,19 @@ impl Proxy {
             let mut payload = [0u8; 1024];
 
             stream.read(&mut payload).await.unwrap();
-            self.consumer.send_message(payload.to_vec()).await;
+
+            let mut guard = self.consumer.lock().unwrap();
+            let consumer_locked = &mut *guard;
+            consumer_locked.send_message(payload.to_vec()).await;
         }
     }
 
     async fn recv_consumer(&mut self, stream: &mut OwnedWriteHalf) -> () {
         loop {
-            let payload = self.consumer.recv_message().await;
-
+            let mut guard = self.consumer.lock().unwrap();
+            let consumer_locked = &mut *guard;
+            let payload = consumer_locked.recv_message().await;
+            drop(guard);
             stream.write(&payload).await.unwrap();
         }
     }
