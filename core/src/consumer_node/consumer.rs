@@ -4,7 +4,7 @@ use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
-        onion::{Message, Onion, Target, ClientType, HelloRequest},
+        onion::{ClientType, HelloRequest, Message, Onion, Target},
     },
 };
 use aes::Aes256;
@@ -19,8 +19,10 @@ pub struct Consumer {
 }
 
 impl Consumer {
-    pub async fn new(index_addr: &str, index_pub_key: [u8; 32]) -> Self {
-        let (mut index_reader, mut index_writer) = Consumer::dial(index_addr, index_pub_key).await;
+    pub async fn new(index_addr: &str) -> Self {
+        let stream = Consumer::dial(index_addr).await;
+        let mut index_reader = RawOnionReader::new(stream.clone());
+        let mut index_writer = RawOnionWriter::new(stream.clone());
 
         index_writer
             .write(Onion {
@@ -47,9 +49,6 @@ impl Consumer {
             peer_pub_keys.push(relay.pub_key);
         }
 
-        //In general the higher the index in the vectors, the closer the value is to the onion core
-        //This means targets[targets.len() -1] is the core, and targets[0] is always the outermost layer
-
         let (entry_reader, entry_writer, ciphers) =
             Consumer::create_circuit(target_ids.clone(), target_ips, peer_pub_keys).await;
 
@@ -60,15 +59,18 @@ impl Consumer {
         }
     }
 
-    pub async fn dial(
+    pub async fn dial(addr: &str) -> TcpStream {
+        TcpStream::connect(addr).await.expect("")
+    }
+
+    pub async fn dial_with_key(
         addr: &str,
         peer_pub_key: [u8; 32],
     ) -> (
         OnionReader<TcpStream, Aes256>,
         OnionWriter<TcpStream, Aes256>,
     ) {
-        let mut stream = TcpStream::connect(addr).await.expect("");
-        Consumer::handshake(&mut stream, peer_pub_key).await
+        Consumer::handshake(&mut Consumer::dial(addr).await, peer_pub_key).await
     }
 
     pub async fn handshake(
@@ -91,7 +93,7 @@ impl Consumer {
         raw_writer
             .write(Onion {
                 circuit_id: None,
-                message: Message::HelloRequest(HelloRequest{
+                message: Message::HelloRequest(HelloRequest {
                     client_type: ClientType::Consumer,
                     public_key: pub_key,
                 }),
@@ -138,13 +140,6 @@ impl Consumer {
         }
     }
 
-    //Per iteration:
-    // - Create clientcrypto(peer_public) and client secret.
-    // - Grow circuit onion with HelloRequest(secret.public_key).
-    // - Send and recieve onion
-    // - Peel onion and match Message type. If true, create and add cipher
-    //   to vector of ciphers.
-    // - Return entry_reader, entry_writer and ciphers. Circuit is done
     async fn create_circuit(
         mut target_ids: Vec<u32>,
         mut target_ips: Vec<SocketAddr>,
@@ -162,7 +157,7 @@ impl Consumer {
 
         // Decrement all lists for the first onion tunnel (entry node)
         target_ids.remove(target_ids.len() - 1);
-        let (mut entry_reader, mut entry_writer) = Consumer::dial(
+        let (mut entry_reader, mut entry_writer) = Consumer::dial_with_key(
             &target_ips.remove(target_ips.len() - 1).to_string(),
             peer_keys.remove(peer_keys.len() - 1),
         )
@@ -180,9 +175,9 @@ impl Consumer {
             onion = Onionizer::grow_onion(
                 Onion {
                     circuit_id: None,
-                    message: Message::HelloRequest(HelloRequest{
+                    message: Message::HelloRequest(HelloRequest {
                         client_type: ClientType::Consumer,
-                        public_key: secret_public
+                        public_key: secret_public,
                     }),
                     target: Target::Relay(target_ids[i].clone()),
                 },
