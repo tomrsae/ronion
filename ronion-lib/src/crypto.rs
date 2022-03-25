@@ -22,8 +22,9 @@ impl SymmetricCipher for Aes256 {
     }
 
     fn decrypt(&self, block: &mut [u8]) {
-        let mut array = GenericArray::from_mut_slice(block);
-        self.decrypt_block(&mut array);
+        for chunk in block.chunks_mut(16) {
+            self.decrypt_block(GenericArray::from_mut_slice(block));
+        }
     }
 }
 
