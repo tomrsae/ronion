@@ -21,8 +21,7 @@ use tokio::{
     net::TcpStream,
 };
 
-extern crate ronion_lib;
-use ronion_lib::consumer_node::consumer::Consumer;
+use core::consumer_node::consumer::Consumer;
 
 pub struct Proxy {
     consumer: Consumer,

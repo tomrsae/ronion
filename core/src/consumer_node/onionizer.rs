@@ -1,5 +1,3 @@
-use core::panic;
-
 use aes::Aes256;
 use async_std::io::{Cursor, WriteExt};
 

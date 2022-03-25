@@ -1,6 +1,6 @@
 use super::{onion::{ Onion, Target, Relay, ClientType, HelloRequest }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
-use core::panic;
+
 use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range, borrow::Borrow};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter, WriteExt};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
