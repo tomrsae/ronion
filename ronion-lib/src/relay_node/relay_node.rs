@@ -91,6 +91,10 @@ impl RelayNode {
 
             symmetric_cipher = circuit.symmetric_cipher();
             context_locked.circuits.insert(circuit_id.unwrap(), circuit);
+        }else {
+            // Onion is from relay, create tunnel
+
+            
         }
         drop(guard);
 
