@@ -76,6 +76,7 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
         let mut cursor = Cursor::new(Vec::new());
         write_onion(&mut Box::pin(BufWriter::new(cursor.get_mut())), onion).await?;
         let mut raw_onion = cursor.into_inner();
+        raw_onion.extend((0..C::BLOCK_SIZE - raw_onion.len()%C::BLOCK_SIZE).map(|_| 0));
         self.cipher.encrypt(&mut raw_onion);
 
         let (len_vi, len_vi_bytes) = (raw_onion.len() as u32).to_varint();
@@ -337,6 +338,7 @@ mod tests {
 
     struct NoopSymmetricCipher {}
     impl SymmetricCipher for NoopSymmetricCipher {
+        const BLOCK_SIZE: usize = 0;
         fn encrypt(&self, _block: &mut [u8]) {}
         fn decrypt(&self, _block: &mut [u8]) {}
     }
