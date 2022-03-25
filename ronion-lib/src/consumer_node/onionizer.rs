@@ -22,8 +22,8 @@ impl Onionizer {
     }
 
     async fn onionize(onion: Onion, cipher: Aes256) -> Vec<u8> {
-        let cursor = Cursor::new(Vec::<u8>::new());
-        let mut onion_writer = RawOnionWriter::new(cursor.clone()).with_cipher(cipher);
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        let mut onion_writer = RawOnionWriter::new(cursor.get_mut()).with_cipher(cipher);
         onion_writer
             .write(onion)
             .await
@@ -33,8 +33,11 @@ impl Onionizer {
 
     async fn deonionize(data: Vec<u8>, cipher: Aes256) -> Onion {
         let mut cursor = Cursor::new(Vec::<u8>::new());
-        let mut onion_reader = RawOnionReader::new(cursor.clone()).with_cipher(cipher);
-        cursor.write(&data);
+        cursor.write(&data).await.unwrap();
+
+        cursor.set_position(0);
+        let mut onion_reader = RawOnionReader::new(cursor).with_cipher(cipher);
+
         onion_reader.read().await.expect("onionize read failed")
     }
 
@@ -114,9 +117,7 @@ mod tests {
         };
         let cipher = test_cipher();
         let data = Onionizer::onionize(onion, cipher.clone()).await;
-
         let actual_onion = Onionizer::deonionize(data, cipher).await;
-
         assert_eq!(
             Onion {
                 circuit_id: Some(420),
