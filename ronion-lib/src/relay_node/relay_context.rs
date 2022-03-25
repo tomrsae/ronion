@@ -1,12 +1,12 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc};
 
 use crate::{uid_generator::UIDGenerator, crypto::ServerCrypto};
 
 use super::{channel::Channel};
 
 pub struct RelayContext {
-    pub circuits: HashMap<u32, Channel>,
-    pub tunnels: HashMap<SocketAddr, Channel>,
+    pub circuits: HashMap<u32, Arc<Channel>>,
+    pub tunnels: HashMap<SocketAddr, Arc<Channel>>,
     pub circ_id_generator: UIDGenerator,
     pub crypto: ServerCrypto
 }

@@ -15,4 +15,8 @@ impl Channel {
     pub fn symmetric_cipher(&self) -> Aes256 {
         self.symmetric_cipher.clone()
     }
+
+    pub async fn open(&self) {
+        
+    }
 }
