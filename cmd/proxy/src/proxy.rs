@@ -23,14 +23,16 @@ use tokio::{
 
 use core::consumer_node::consumer::Consumer;
 
+use ronion_index::key;
+
 pub struct Proxy {
     consumer: Arc<Mutex<Consumer>>,
 }
 
 impl Proxy {
-    pub async fn new() -> Self {
-        let index_addr = "const ip:port";
-        let consumer = Arc::new(Mutex::new(Consumer::new(index_addr).await));
+    pub async fn new(index_addr: String) -> Self {
+        let index_key = key::read_public();
+        let consumer = Arc::new(Mutex::new(Consumer::new(index_addr, index_key).await));
         Proxy { consumer }
     }
 

@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use aes::Aes256;
 use async_std::{
     io::{Error, ErrorKind, Result, Write, Cursor},
@@ -11,7 +13,7 @@ use crate::{
     protocol::{
         io::{RawOnionReader, RawOnionWriter},
         onion::{Message, Onion, Target, HelloRequest, ClientType, Relay},
-    }, crypto::ClientCrypto,
+    }, crypto::{ClientCrypto, ServerSecret, ClientSecret},
 };
 
 use super::{channel::OnionChannel, relay_context::RelayContext};
@@ -60,110 +62,86 @@ impl RelayNode {
         stream: TcpStream,
         context: Arc<Mutex<RelayContext>>,
     ) -> Result<()> {
-        let mut reader = RawOnionReader::new(&stream);
-
-        let hello_onion = reader.read().await?;
-        let hello_req = Self::get_hello_req(hello_onion).await?;
-
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
-        let secret = context_locked.crypto.gen_secret();
 
+        let secret = context_locked.crypto.gen_secret();
         let pub_key = secret.public_key();
-        let channel = Arc::new(OnionChannel::new(secret.symmetric_cipher(hello_req.public_key)));
+
+        let (sender_channel, connector_type) = Self::establish_sender_channel(stream, secret).await?;
+        let channel_arc = Arc::new(sender_channel);
 
         let mut circuit_id = None;
-        match hello_req.client_type {
+        match connector_type {
             ClientType::Consumer => {
                 circuit_id = Some(context_locked.circ_id_generator.get_uid());
                 context_locked
                     .circuits
-                    .insert(circuit_id.unwrap(), channel.clone());
+                    .insert(circuit_id.unwrap(), channel_arc.clone());
             }
             ClientType::Relay => {
-                context_locked.tunnels.insert(stream.peer_addr()?, channel.clone());
+                context_locked.tunnels.insert(channel_arc.peer_addr(), channel_arc.clone());
             }
         }
         drop(guard);
 
-        let hello_response = Self::generate_hello_response(pub_key, circuit_id);
-        Self::send_onion(hello_response, channel.symmetric_cipher(), &stream).await?;
-        
-        let mut reader = reader.with_cipher(channel.symmetric_cipher());
+        let acknowledgement = Self::generate_hello_response(pub_key, circuit_id);
+        channel_arc.send_payload(acknowledgement).await?;
 
-        let onion = reader.read().await?;
+        while let onion = channel_arc.recv_payload().await? {
+            let mut guard = context.lock().await;
+            let context_locked = &mut *guard;
+    
+            let receiver_channel = match onion.target {
+                Target::Relay(relay_id) => {
+                    let relay = context_locked.indexed_relays.iter().find(|relay| relay.id == relay_id).expect("Relay not indexed");
+                    stream = TcpStream::connect(relay.addr).await?;
 
-        let mut guard = context.lock().await;
-        let context_locked = &mut *guard;
-
-        match onion.target {
-            Target::Relay(relay_id) => {
-                let relay = context_locked.indexed_relays.iter().find(|relay| relay.id == relay_id).expect("No such relay found");
-                let tunnel_stream = TcpStream::connect(relay.addr).await?;
-
-                let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
-                let secret = crypto.gen_secret();
-                let pub_key = secret.public_key();
-
-                let mut writer = RawOnionWriter::new(&tunnel_stream);
-                writer.write(
-                    Onion {
-                            target: Target::Current,
-                            circuit_id: None,
-                            message: Message::HelloRequest(HelloRequest { client_type: ClientType::Relay, public_key: pub_key })
-                }).await?;
-
-                let mut reader = RawOnionReader::new(&tunnel_stream);
-                let hello_response = reader.read().await?;
-
-                let symmetric_cipher
-                    = if let Message::HelloResponse(peer_key) = hello_response.message {
-                        secret.symmetric_cipher(peer_key).expect("Failed to create symmetric cipher")
-                    } else {
-                        //err?
-                        todo!()
-                    }
-                let channel = OnionChannel::new(symmetric_cipher);
-
-                let mut cursor = Cursor::new(Vec::new());
-                RawOnionWriter::new(&mut cursor).with_cipher(channel.symmetric_cipher()).write(onion).await?;
-
-                writer.with_cipher(channel.symmetric_cipher()).write(
-                    Onion {
-                            target: Target::Current,
-                            circuit_id: None,
-                            message: Message::Payload(cursor.into_inner())
-                }).await?;
-
-                context_locked.tunnels.insert(relay.addr, Arc::new(channel));
-            },
-            Target::IP(ip) => {
-                // I am exit node
+                    let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
+                    let secret = crypto.gen_secret();
+                    let mut channel = OnionChannel::reach_relay(stream, secret).await?;
+    
+                    let mut cursor = Cursor::new(Vec::new());
+                    RawOnionWriter::new(&mut cursor).with_cipher(channel.symmetric_cipher()).write(onion).await?;
+    
+                    channel.send_payload(
+                        Onion {
+                                target: Target::Current,
+                                circuit_id: None,
+                                message: Message::Payload(cursor.into_inner())
+                    }).await?;
+    
+                    context_locked.tunnels.insert(relay.addr, Arc::new(channel));
+                },
+                Target::IP(ip) => {
+                    // I am exit node
+                    todo!();
+                },
+                Target::Current => todo!() // err?
+            }
+    
+            if let Message::Payload(payload) = onion.message {
                 todo!();
-            },
-            Target::Current => todo!() // err?
-        }
-
-        if let Message::Payload(payload) = onion.message {
-            todo!();
-        } else {
-            // err?
-            todo!();
+            } else {
+                // err?
+                todo!();
+            }
         }
 
         Ok(())
     }
 
-    async fn establish_sender_channel(stream: TcpStream) -> Result<()> {
+    async fn establish_sender_channel(stream: TcpStream, secret: ServerSecret) -> Result<(OnionChannel, ClientType)> {
         let (reader, writer)
             = &mut (RawOnionReader::new(&stream), RawOnionWriter::new(&stream));
 
         let sender_hello = reader.read().await?;
+        let hello_req = Self::extract_hello_req(sender_hello).await?;
 
-        Ok(())
+        Ok((OnionChannel::new(stream, secret.symmetric_cipher(hello_req.public_key)), hello_req.client_type))
     }
 
-    fn establish_receiver_channel() {
+    async fn establish_receiver_channel(stream: TcpStream, secret: ClientSecret) {
 
     }
 
@@ -175,7 +153,7 @@ impl RelayNode {
         }
     }
 
-    async fn get_hello_req(hello: Onion) -> Result<HelloRequest> {
+    async fn extract_hello_req(hello: Onion) -> Result<HelloRequest> {
         if let Message::HelloRequest(req) = hello.message {
             Ok(req)
         } else {

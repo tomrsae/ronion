@@ -19,7 +19,7 @@ fn read_from_file(mut file: File, buf: &mut [u8]) -> Result<()> {
     let end = file.seek(std::io::SeekFrom::End(0))?;
     file.seek(std::io::SeekFrom::Start(0))?;
 
-    if end != 32 {
+    if end as usize != buf.len() {
         panic!("keyfile was of invalid length");
     }
 
@@ -41,14 +41,14 @@ pub fn gen_keys() -> Result<()> {
 }
 
 pub fn read_public() -> [u8; 32] {
-    let file = file_from_env("RO_PUBKEY", "keyfile.pub.rkf").expect("unable to open keyfile");
+    let file = file_from_env(PUBKEY_ENV, PUBKEY_DEFAULT).expect("unable to open keyfile");
     let mut buf = [0u8; 32];
     read_from_file(file, &mut buf).expect("unable to read from file");
     buf
 }
 
 pub fn read_keypair() -> [u8; 64] {
-    let file = file_from_env("RO_PRVKEY", "keyfile.prv.rkf").expect("unable to open keyfile"); 
+    let file = file_from_env(PRVKEY_ENV, PRVKEY_DEFAULT).expect("unable to open keyfile"); 
     let mut buf = [0u8; 64];
     read_from_file(file, &mut buf).expect("unable to read from file");
     buf
