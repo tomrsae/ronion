@@ -338,7 +338,7 @@ mod tests {
 
     struct NoopSymmetricCipher {}
     impl SymmetricCipher for NoopSymmetricCipher {
-        const BLOCK_SIZE: usize = 0;
+        const BLOCK_SIZE: usize = 1;
         fn encrypt(&self, _block: &mut [u8]) {}
         fn decrypt(&self, _block: &mut [u8]) {}
     }
