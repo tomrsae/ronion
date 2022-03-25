@@ -4,7 +4,7 @@ use crate::{
     crypto::{ClientCrypto, ClientSecret},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
-        onion::{ClientType, HelloRequest, Message, Onion, Target},
+        onion::{ClientType, HelloRequest, Message, Onion, Relay, Target},
     },
 };
 use aes::Aes256;
@@ -38,18 +38,8 @@ impl Consumer {
             _ => panic!("Got unexpected message"),
         };
 
-        let mut target_ids = Vec::<u32>::with_capacity(relays.len());
-        let mut target_ips = Vec::<SocketAddr>::with_capacity(relays.len());
-        let mut peer_pub_keys = Vec::<[u8; 32]>::with_capacity(relays.len());
-
-        for relay in relays {
-            target_ids.push(relay.id);
-            target_ips.push(relay.addr);
-            peer_pub_keys.push(relay.pub_key);
-        }
-
-        let (entry_reader, entry_writer, ciphers) =
-            Consumer::create_circuit(target_ids.clone(), target_ips, peer_pub_keys).await;
+        let (entry_reader, entry_writer, target_ids, ciphers) =
+            Consumer::create_circuit(relays).await;
 
         Consumer {
             entry_reader,
@@ -137,12 +127,11 @@ impl Consumer {
     }
 
     async fn create_circuit(
-        mut target_ids: Vec<u32>,
-        mut target_ips: Vec<SocketAddr>,
-        mut peer_keys: Vec<[u8; 32]>,
+        mut relays: Vec<Relay>,
     ) -> (
         OnionReader<TcpStream, Aes256>,
         OnionWriter<TcpStream, Aes256>,
+        Vec<u32>,
         Vec<Aes256>,
     ) {
         let mut crypto: ClientCrypto;
@@ -151,20 +140,17 @@ impl Consumer {
         let mut ciphers = Vec::<Aes256>::new();
         let mut onion: Onion;
 
-        // Decrement all lists for the first onion tunnel (entry node)
-        target_ids.remove(target_ids.len() - 1);
-        let (mut entry_reader, mut entry_writer) = Consumer::dial_with_key(
-            target_ips.remove(target_ips.len() - 1).to_string(),
-            peer_keys.remove(peer_keys.len() - 1),
-        )
-        .await;
-
-        if !(target_ids.len() == target_ips.len() && target_ips.len() == peer_keys.len()) {
+        if relays.len() == 0 {
             panic!("All lists must be of equal length")
         }
 
-        for i in 0..target_ids.len() {
-            crypto = ClientCrypto::new(&peer_keys.remove(peer_keys.len() - 1))
+        // Decrement all lists for the first onion tunnel (entry node)
+        let entry_node = relays.remove(relays.len() - 1);
+        let (mut entry_reader, mut entry_writer) =
+            Consumer::dial_with_key(entry_node.addr.to_string(), entry_node.pub_key).await;
+
+        for i in 0..relays.len() {
+            crypto = ClientCrypto::new(&relays.clone()[relays.len() - 1].pub_key)
                 .expect("clientcrypto new failed");
             secret = crypto.gen_secret();
             secret_public = secret.public_key();
@@ -175,10 +161,13 @@ impl Consumer {
                         client_type: ClientType::Consumer,
                         public_key: secret_public,
                     }),
-                    target: Target::Relay(target_ids[i].clone()),
+                    target: Target::Relay(relays.clone()[i].id),
                 },
-                target_ids[0..i].to_vec(), //Should send copy
-                ciphers[0..i].to_vec(),    //Empty first time
+                relays.clone()[0..i]
+                    .into_iter()
+                    .map(|relay| relay.id)
+                    .collect(), //Should send copy
+                ciphers[0..i].to_vec(), //Empty first time
             )
             .await;
             match entry_writer.write(onion).await {
@@ -195,6 +184,8 @@ impl Consumer {
             })
         }
 
-        (entry_reader, entry_writer, ciphers)
+        let target_ids = relays.into_iter().map(|relay| relay.id).collect();
+
+        (entry_reader, entry_writer, target_ids, ciphers)
     }
 }
