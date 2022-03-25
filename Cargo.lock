@@ -1357,6 +1357,9 @@ dependencies = [
 [[package]]
 name = "ronion_index"
 version = "0.1.0"
+dependencies = [
+ "core",
+]
 
 [[package]]
 name = "ronion_proxy"
@@ -1370,6 +1373,9 @@ dependencies = [
 [[package]]
 name = "ronion_relay"
 version = "0.1.0"
+dependencies = [
+ "core",
+]
 
 [[package]]
 name = "ryu"

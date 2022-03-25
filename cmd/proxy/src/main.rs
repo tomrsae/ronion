@@ -1,7 +1,6 @@
 pub mod proxy;
 
-use std::{env, net::SocketAddr, str::FromStr};
-
+use std::{env, net::SocketAddr, str::FromStr, path::Path};
 use proxy::Proxy;
 use shadowsocks::{config::ServerType, context::Context, crypto::v1::CipherKind, ServerConfig};
 
@@ -14,6 +13,7 @@ async fn main() {
     let mut proxy: Proxy;
     let context = Context::new_shared(ServerType::Local);
     let svr_cfg = ServerConfig::new(port, pw, cipmet);
+
 
     proxy = Proxy::new().await;
     proxy.serve_consumers(context, &svr_cfg).await;

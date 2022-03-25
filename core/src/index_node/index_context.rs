@@ -8,12 +8,12 @@ pub struct IndexContext {
 }
 
 impl IndexContext {
-    pub fn new() -> Self {
+    pub fn new(keypair_bytes: [u8; 64]) -> Self {
         IndexContext {
             available_relays: Vec::new(),
             circ_id_generator: UIDGenerator::new(10),
             relay_id_generator: UIDGenerator::new(10),
-            crypto: ServerCrypto::new()
+            crypto: ServerCrypto::from_bytes(&keypair_bytes).expect("invalid keypair"),
         }
     }
 }

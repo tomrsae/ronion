@@ -14,9 +14,7 @@ use crate::{
     }, crypto::ClientCrypto,
 };
 
-use super::{
-    relay_context::RelayContext, channel::OnionChannel,
-};
+use super::{channel::OnionChannel, relay_context::RelayContext};
 
 pub struct RelayNode {
     ip: IpAddr,
@@ -70,7 +68,7 @@ impl RelayNode {
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
         let secret = context_locked.crypto.gen_secret();
-        
+
         let pub_key = secret.public_key();
         let channel = Arc::new(OnionChannel::new(secret.symmetric_cipher(hello_req.public_key)));
 
@@ -78,14 +76,16 @@ impl RelayNode {
         match hello_req.client_type {
             ClientType::Consumer => {
                 circuit_id = Some(context_locked.circ_id_generator.get_uid());
-                context_locked.circuits.insert(circuit_id.unwrap(), channel.clone());
-            },
+                context_locked
+                    .circuits
+                    .insert(circuit_id.unwrap(), channel.clone());
+            }
             ClientType::Relay => {
                 context_locked.tunnels.insert(stream.peer_addr()?, channel.clone());
             }
         }
         drop(guard);
-        
+
         let hello_response = Self::generate_hello_response(pub_key, circuit_id);
         Self::send_onion(hello_response, channel.symmetric_cipher(), &stream).await?;
         

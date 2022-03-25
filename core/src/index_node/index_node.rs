@@ -22,11 +22,11 @@ pub struct IndexNode {
 }
 
 impl IndexNode {
-    pub fn new(ip: IpAddr, port: u16) -> Self {
+    pub fn new(ip: IpAddr, port: u16, signing_key_pair: [u8; 64]) -> Self {
         Self {
             ip: ip,
             port: port,
-            context: Arc::new(Mutex::new(IndexContext::new()))
+            context: Arc::new(Mutex::new(IndexContext::new(signing_key_pair)))
         }
     }
 
