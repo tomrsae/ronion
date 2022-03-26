@@ -75,11 +75,9 @@ impl RelayNode {
         match connector_type {
             ClientType::Consumer => {
                 circuit_id = Some(context_locked.circ_id_generator.get_uid());
-                context_locked
-                    .circuits
-                    .insert(circuit_id.unwrap(), Circuit {
-                    
-                    });
+                // context_locked
+                //     .circuits
+                //     .insert(circuit_id.unwrap(), Circuit {);
             }
             ClientType::Relay => {
                 context_locked.tunnels.insert(sender_channel_arc.peer_addr(), sender_channel_arc.clone());
