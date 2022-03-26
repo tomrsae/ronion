@@ -5,14 +5,14 @@ use async_std::{net::TcpStream, io::{Result, Read, Write, Cursor}, sync::Mutex};
 
 use crate::{protocol::{io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter}, onion::{Onion, Message, Target, HelloRequest, ClientType}}, crypto::ClientSecret};
 
-pub struct OnionChannel {
+pub struct Tunnel {
     symmetric_cipher: Aes256,
     reader_ref: Mutex<OnionReader<TcpStream, Aes256>>,
     writer_ref: Mutex<OnionWriter<TcpStream, Aes256>>,
     peer_addr: SocketAddr
 }
 
-impl OnionChannel {
+impl Tunnel {
     pub fn new(stream: TcpStream, symmetric_cipher: Aes256) -> Self {
         Self {
             symmetric_cipher: symmetric_cipher.clone(),
@@ -26,10 +26,6 @@ impl OnionChannel {
         self.peer_addr
     }
 
-    pub fn symmetric_cipher(&self) -> Aes256 {
-        self.symmetric_cipher.clone()
-    }
-
     pub async fn recv_onion(&self) -> Result<Onion> {
         self.reader_ref.lock().await.read().await
     }
@@ -39,25 +35,23 @@ impl OnionChannel {
     }
 
     pub async fn peel_layer(&self, onion: Onion, circuit_id: u32) -> Result<Onion> {
-        let payload = if let Message::Payload(payload) = onion.message {
-            payload
+        if let Message::Payload(payload) = onion.message {
+            Ok(
+                Onion {
+                    target: Target::Current,
+                    circuit_id: Some(circuit_id),
+                    message: Message::Payload(payload)
+                }
+            )
         } else {
             // err?
             todo!()
-        };
-
-        Ok(
-            Onion {
-                target: Target::Current,
-                circuit_id: Some(circuit_id),
-                message: Message::Payload(payload)
-            }
-        )
+        }
     }
 
     pub async fn add_layer(&self, onion: Onion, circuit_id: u32) -> Result<Onion> {
         let mut payload_buf_cursor = Cursor::new(Vec::new());
-        RawOnionWriter::new(payload_buf_cursor.get_mut()).with_cipher(self.symmetric_cipher()).write(onion).await?;
+        RawOnionWriter::new(payload_buf_cursor.get_mut()).with_cipher(self.symmetric_cipher.clone()).write(onion).await?;
 
         Ok(
             Onion {
@@ -68,7 +62,7 @@ impl OnionChannel {
         )
     }
 
-    pub async fn reach_relay(stream: TcpStream, secret: ClientSecret) -> Result<OnionChannel> {
+    pub async fn reach_relay(stream: TcpStream, secret: ClientSecret) -> Result<Tunnel> {
         let (reader, writer)
             = &mut (RawOnionReader::new(&stream), RawOnionWriter::new(&stream));
 
@@ -84,14 +78,13 @@ impl OnionChannel {
 
         let hello_response = reader.read().await?;
 
-        let symmetric_cipher
-            = if let Message::HelloResponse(peer_key) = hello_response.message {
-                secret.symmetric_cipher(peer_key).expect("Failed to create symmetric cipher")
-            } else {
-                //err?
-                todo!()
-            };
+        let symmetric_cipher = if let Message::HelloResponse(peer_key) = hello_response.message {
+            secret.symmetric_cipher(peer_key).expect("Failed to create symmetric cipher")
+        } else {
+            //err?
+            todo!()
+        };
 
-        Ok(OnionChannel::new(stream, symmetric_cipher))
+        Ok(Tunnel::new(stream, symmetric_cipher))
     }
 }

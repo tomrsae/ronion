@@ -16,7 +16,7 @@ use crate::{
     }, crypto::{ClientCrypto, ServerSecret, ClientSecret},
 };
 
-use super::{channel::OnionChannel, relay_context::RelayContext};
+use super::{tunnel::Tunnel, relay_context::{RelayContext, Circuit}};
 
 pub struct RelayNode {
     ip: IpAddr,
@@ -57,7 +57,7 @@ impl RelayNode {
             task::spawn(handler_future);
         }
     }
-
+    
     async fn handle_connection(
         stream: TcpStream,
         context: Arc<Mutex<RelayContext>>,
@@ -68,8 +68,8 @@ impl RelayNode {
         let secret = context_locked.crypto.gen_secret();
         let pub_key = secret.public_key();
 
-        let (sender_channel, connector_type) = Self::establish_sender_channel(stream, secret).await?;
-        let sender_channel_arc = Arc::new(sender_channel);
+        let (sender_tunnel, connector_type) = Self::establish_sender_tunnel(stream, secret).await?;
+        let sender_channel_arc = Arc::new(sender_tunnel);
 
         let mut circuit_id = None;
         match connector_type {
@@ -77,7 +77,9 @@ impl RelayNode {
                 circuit_id = Some(context_locked.circ_id_generator.get_uid());
                 context_locked
                     .circuits
-                    .insert(circuit_id.unwrap(), sender_channel_arc.clone());
+                    .insert(circuit_id.unwrap(), Circuit {
+                    
+                    });
             }
             ClientType::Relay => {
                 context_locked.tunnels.insert(sender_channel_arc.peer_addr(), sender_channel_arc.clone());
@@ -92,55 +94,62 @@ impl RelayNode {
             }
         ).await?;
 
-        while let onion = sender_channel_arc.recv_onion().await? {
+        // Relay recv loop
+        while let onion_to_relay = sender_channel_arc.recv_onion().await? {
             let mut guard = context.lock().await;
             let context_locked = &mut *guard;
     
-            let receiver_channel = match onion.target {
+            let receiver_channel = match onion_to_relay.target {
                 Target::Relay(relay_id) => {
-                    let relay = context_locked.indexed_relays.iter().find(|relay| relay.id == relay_id).expect("Relay not indexed");
+                    let relay
+                        = context_locked.indexed_relays
+                            .iter()
+                            .find(|relay| relay.id == relay_id)
+                            .expect("Relay not indexed");
 
-                    let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
-                    let secret = crypto.gen_secret();
-                    let channel = OnionChannel::reach_relay(TcpStream::connect(relay.addr).await?, secret).await?;
+                    if let Some(existing_tunnel)
+                        = context_locked.tunnels
+                            .contains_key(&relay.addr)
+                            .then(|| context_locked.tunnels.get(&relay.addr))
+                            .map(|tunnel| tunnel.unwrap())
+                    {
+                        existing_tunnel.clone()
+                    } else {
+                        let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
+                        let secret = crypto.gen_secret();
+    
+                        let channel = Arc::new(Tunnel::reach_relay(TcpStream::connect(relay.addr).await?, secret).await?);
+                        context_locked.tunnels.insert(relay.addr, channel.clone());
 
-                    // peel or layer here
-                    let onion = todo!();
-    
-                    channel.send_onion(onion).await?;
-    
-                    context_locked.tunnels.insert(relay.addr, Arc::new(channel));
+                        channel
+                    }
                 },
                 Target::IP(ip) => {
                     // I am exit node
+                    // not sure bud, ask de bois
+
                     todo!();
                 },
                 Target::Current => todo!() // err?
             };
-    
-            // if let Message::Payload(payload) = onion.message {
-            //     todo!();
-            // } else {
-            //     // err?
-            //     todo!();
-            // }
+
+            // peel or layer onion further before relaying
+
+            receiver_channel.send_onion(onion_to_relay).await?;
         }
 
         Ok(())
     }
 
-    async fn establish_sender_channel(stream: TcpStream, secret: ServerSecret) -> Result<(OnionChannel, ClientType)> {
-        let (reader, writer)
-            = &mut (RawOnionReader::new(&stream), RawOnionWriter::new(&stream));
+    async fn establish_sender_tunnel(stream: TcpStream, secret: ServerSecret) -> Result<(Tunnel, ClientType)> {
+        let reader = &mut RawOnionReader::new(&stream);
 
         let sender_hello = reader.read().await?;
-        let hello_req = if let Message::HelloRequest(req) = sender_hello.message {
-            Ok(req)
+        if let Message::HelloRequest(req) = sender_hello.message {
+            Ok((Tunnel::new(stream, secret.symmetric_cipher(req.public_key)), req.client_type))
         } else {
             Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
-        }?;
-
-        Ok((OnionChannel::new(stream, secret.symmetric_cipher(hello_req.public_key)), hello_req.client_type))
+        }
     }
 
     async fn establish_receiver_channel(stream: TcpStream, secret: ClientSecret) {
