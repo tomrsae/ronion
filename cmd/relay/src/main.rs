@@ -8,6 +8,8 @@ fn main() {
     let (ip, port) = parse_arguments(args);
     let node = RelayNode::new(ip, port);
 
+    node.register(index_addr, index_signing_pub_key);
+
     node.start();
 }
 

@@ -40,9 +40,9 @@ impl RelayNode {
         task::block_on(listen_future); // bytte til async?
     }
 
-    pub fn register(&self, index_addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) {
+    pub fn register(&self, index_addr: SocketAddr, index_signing_pub_key: [u8; 32]) {
         let register_future = async {
-            let tunnel = Self::index_tunnel(index_addr, pub_key, index_signing_pub_key).await.expect("Failed to establish onion tunnel with Index node");
+            let tunnel = Self::index_tunnel(index_addr, index_signing_pub_key).await.expect("Failed to establish onion tunnel with Index node");
 
             tunnel.send_onion(
                 Onion {
@@ -59,7 +59,7 @@ impl RelayNode {
         task::block_on(register_future);
 
         let index_relays_future = async {
-            self.context.lock().await.indexed_relays.extend(Self::index_all_relays(index_addr, pub_key, index_signing_pub_key).await.expect("msg"))
+            self.context.lock().await.indexed_relays.extend(Self::index_all_relays(index_addr, index_signing_pub_key).await.expect("msg"))
         };
 
         task::block_on(index_relays_future);
@@ -281,8 +281,8 @@ impl RelayNode {
 
     }
 
-    async fn index_all_relays(index_addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) -> Result<Vec<Relay>> {
-        let tunnel = Self::index_tunnel(index_addr, pub_key, index_signing_pub_key).await?;
+    async fn index_all_relays(index_addr: SocketAddr, index_signing_pub_key: [u8; 32]) -> Result<Vec<Relay>> {
+        let tunnel = Self::index_tunnel(index_addr, index_signing_pub_key).await?;
 
         tunnel.send_onion(
             Onion {
@@ -300,23 +300,24 @@ impl RelayNode {
         }
     }
 
-    async fn index_tunnel(addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) -> Result<Tunnel> {
+    async fn index_tunnel(addr: SocketAddr, index_signing_pub_key: [u8; 32]) -> Result<Tunnel> {
         let stream = TcpStream::connect(addr).await?;
-        
+        let crypto = ClientCrypto::new(&index_signing_pub_key).expect("Failed to generate crypto");
+        let secret = crypto.gen_secret();
+
         let mut writer = RawOnionWriter::new(&stream);
         writer.write(
             Onion {
                 target: Target::Current,
                 circuit_id: None,
-                message: Message::HelloRequest(HelloRequest { client_type: ClientType::Relay, public_key: pub_key })
+                message: Message::HelloRequest(HelloRequest { client_type: ClientType::Relay, public_key: secret.public_key() })
             }).await?;
             
         let mut reader = RawOnionReader::new(&stream);
         let hello_response = reader.read().await?;
         
         let symmetric_cipher = if let Message::HelloResponse(peer_key) = hello_response.message {
-            let crypto = ClientCrypto::new(&index_signing_pub_key).expect("Failed to generate crypto");
-            crypto.gen_secret().symmetric_cipher(peer_key).expect("Failed to generate symmetric cipher")
+            secret.symmetric_cipher(peer_key).expect("failed to generate symmetric cipher")
         } else {
             //err?
             todo!()
