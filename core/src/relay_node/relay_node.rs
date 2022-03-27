@@ -53,10 +53,16 @@ impl RelayNode {
             ).await
             .expect("Failed to send ping request to index node");
 
-            let response = tunnel.recv_onion().await;
+            let _ = tunnel.recv_onion().await;
         };
 
         task::block_on(register_future);
+
+        let index_relays_future = async {
+            self.context.lock().await.indexed_relays.extend(Self::index_all_relays(index_addr, pub_key, index_signing_pub_key).await.expect("msg"))
+        };
+
+        task::block_on(index_relays_future);
     }
 
     async fn listen(&self, socket: SocketAddr) {
