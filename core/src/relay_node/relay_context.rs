@@ -1,7 +1,6 @@
 use std::{collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc};
 
-use aes::Aes256;
-
+use crate::crypto::Aes256;
 use crate::{uid_generator::UIDGenerator, crypto::ServerCrypto, protocol::onion::Relay};
 
 use super::{tunnel::Tunnel};

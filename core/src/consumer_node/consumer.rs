@@ -1,11 +1,10 @@
 use crate::{
-    crypto::{ClientCrypto, ClientSecret},
+    crypto::{ClientCrypto, ClientSecret, Aes256},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
         onion::{ClientType, HelloRequest, Message, Onion, Relay, Target},
     },
 };
-use aes::Aes256;
 use async_std::net::TcpStream;
 
 use super::onionizer::Onionizer;

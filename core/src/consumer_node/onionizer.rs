@@ -1,6 +1,6 @@
-use aes::Aes256;
 use async_std::io::{Cursor, WriteExt};
 
+use crate::crypto::Aes256;
 use crate::protocol::{
     io::{RawOnionReader, RawOnionWriter},
     onion::{Message, Onion, Target},

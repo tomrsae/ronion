@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, cell::RefCell, sync::Arc};
 
-use aes::Aes256;
+use crate::crypto::Aes256;
 use async_std::{net::TcpStream, io::{Result, Read, Write, Cursor}, sync::Mutex};
 
 use crate::{protocol::{io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter}, onion::{Onion, Message, Target, HelloRequest, ClientType}}, crypto::ClientSecret};
