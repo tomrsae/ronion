@@ -10,17 +10,17 @@ Consumer mottar HelloResponse(entry_long) fra Entry_node.
 
 - Konklusjon: Consumer har mottat entry_long.
 
-## Koblign til relay 1
+## Kobling til relay 1
 Consumer sender HelloRequest som onion, (kryptert med entry_cipher) til Entry_node
 
-Entry_node mottar og dekrypterer onion. Får ut target(Relay_node_1), circuit_id og HelloRequest(secret_public_1). 
+Entry_node mottar og dekrypterer onion. Får ut target(Relay_node_1), circuit_id=None og HelloRequest(secret_public_1). 
 
 Entry_node sjekker om han har en kryptert kanal til Relay_node_1. 
 FALSE?
 -> Entry_node sender HelloRequest(local_secret_1) til Relay_node_1.
 -> Relay_node mottar HelloResponse(local_1_long) fra Relay_node_1.
 
-Entry_node krypterer HelloRequest(secret_public_1) til en onion med local_1_cipher og sender til Relay_node_1.
+Entry_node krypterer target=Current, circuit_id=UID og HelloRequest(secret_public_1) til en onion med local_1_cipher og sender til Relay_node_1.
 
 Rela_node_1 mottar og dekrypterer onion til en target(current), circuit_id og HelloRequest(secret_public_1).
 

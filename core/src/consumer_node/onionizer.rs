@@ -1,5 +1,6 @@
 use aes::Aes256;
 use async_std::io::{Cursor, WriteExt};
+use async_std::net::{SocketAddr, IpAddr, Ipv4Addr};
 
 use crate::protocol::{
     io::{RawOnionReader, RawOnionWriter},
@@ -39,12 +40,12 @@ impl Onionizer {
         onion_reader.read().await.expect("onionize read failed")
     }
 
-    pub async fn grow_onion_relay(&self, payload: Vec<u8>) -> Onion {
+    pub async fn grow_onion_relay(&self, payload: Vec<u8>, addr: SocketAddr) -> Onion {
         Onionizer::grow_onion(
             Onion {
                 circuit_id: None,
                 message: Message::Payload(payload),
-                target: Target::Current,
+                target: Target::IP(addr),
             },
             self.target_ids.clone(),
             self.ciphers.clone(),
@@ -154,7 +155,7 @@ mod tests {
         let target_ids = (0..3).collect();
         let onionizer = Onionizer::new(target_ids, ciphers);
         let grown_onion = onionizer
-            .grow_onion_relay("Naice test guy".as_bytes().to_vec())
+            .grow_onion_relay("Naice test guy".as_bytes().to_vec(), SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
             .await;
         let peeled_onion = onionizer.peel_onion_relay(grown_onion).await;
 
@@ -162,7 +163,7 @@ mod tests {
             Onion {
                 circuit_id: None,
                 message: Message::Payload("Naice test guy".as_bytes().to_vec()),
-                target: Target::Current,
+                target: Target::IP(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)),
             },
             peeled_onion
         )

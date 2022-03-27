@@ -1,11 +1,11 @@
-use std::borrow::BorrowMut;
+use std::{borrow::BorrowMut, sync::Arc};
 
 use aes::Aes256;
 use async_std::{
     io::{Error, ErrorKind, Result, Write, Cursor},
     net::{IpAddr, SocketAddr, TcpListener, TcpStream},
     prelude::*,
-    sync::{Arc, Mutex},
+    sync::{Mutex},
     task,
 };
 
@@ -81,93 +81,158 @@ impl RelayNode {
         stream: TcpStream,
         context: Arc<Mutex<RelayContext>>,
     ) -> Result<()> {
-        let mut guard = context.lock().await;
-        let context_locked = &mut *guard;
-
-        let secret = context_locked.crypto.gen_secret();
-        let pub_key = secret.public_key();
-
-        let (sender_tunnel, sender_type) = Self::establish_sender_tunnel(stream, secret).await?;
-        let sender_channel_arc = Arc::new(sender_tunnel);
-
-        if sender_type == ClientType::Relay {
-            context_locked.relay_tunnels.insert(sender_channel_arc.peer_addr(), sender_channel_arc.clone());
-        }
-
-        sender_channel_arc.send_onion(
-            Onion {
-                target: Target::Current,
-                circuit_id: None,
-                message: Message::HelloResponse(pub_key),
+        let (circuit_id, peel_tunnel_arc, hello_req) = {
+            let mut guard = context.lock().await;
+            let context_locked = &mut *guard;
+    
+            let secret = context_locked.crypto.gen_secret();
+            let pub_key = secret.public_key();
+    
+            let (peel_tunnel, hello_req) = Self::establish_sender_tunnel(stream, secret).await?;
+            let peel_tunnel_arc = Arc::new(peel_tunnel);
+    
+            if hello_req.client_type == ClientType::Relay {
+                context_locked.relay_tunnels.insert(peel_tunnel_arc.peer_addr(), peel_tunnel_arc.clone());
             }
-        ).await?;
-        drop(guard);
+    
+            peel_tunnel_arc.send_onion(
+                Onion {
+                    target: Target::Current,
+                    circuit_id: None,
+                    message: Message::HelloResponse(pub_key),
+                }
+            ).await?;
+
+            (
+                context_locked.circ_id_generator.get_uid(),
+                peel_tunnel_arc.clone(),
+                hello_req
+            )
+        };
+        
+
+        // while new onion decoded from tunnel
+        // 
 
         // Relay recv loop
-        while let onion_to_relay = sender_channel_arc.recv_onion().await {
+        while let onion = peel_tunnel_arc.recv_onion().await {
             let mut guard = context.lock().await;
             let context_locked = &mut *guard;
 
-            match onion_to_relay.target {
-                Target::Current => {
-                    let circuit = if let Some(id) = onion_to_relay.circuit_id {
-                        context_locked.circuits.get(&id)
-                                .map(|circ_ref| circ_ref.clone())
-                                .unwrap_or_else(|| {
-                                    let circ = Arc::new(Circuit {
-                                        // usikker, ny symm_ciph, eller samme som tunnel?
-                                        symmetric_cipher: context_locked.crypto.gen_secret().symmetric_cipher([0_u8; 32]),
-                                        tunnel_addr: sender_channel_arc.peer_addr()
-                                    });
-        
-                                    context_locked.circuits.insert(id, circ.clone());
-        
-                                    circ
-                                })
-                    } else {
-                        // err?
-                        todo!();
-                    };                    
-
-                    let receiver_tunnel = match context_locked.relay_tunnels.get(&circuit.tunnel_addr) {
-                        Some(tunnel) => tunnel.clone(),
-                        None => {
-                            match onion_to_relay.target {
-                                Target::Relay(relay_id) => {
-                                    // OBS: Mulig deadlock?? Droppe lock først????????????
-                                    Self::relay_tunnel(relay_id, context.clone()).await?
-                                },
-                                Target::IP(ip) => {
-
-                                    todo!();
-                                },
-                                Target::Current => todo!() // err?
-                            }
-                        }
-                    };
-                },
-                Target::IP(ip) => {
-                    // skjer vel aldri?
-                },
-                Target::Relay(relay_id) => {
-                    // OBS: Mulig deadlock?? Droppe lock først????????????
-                    Self::relay_tunnel(relay_id, context.clone()).await?
-                        .send_onion(onion_to_relay).await?;
-                }
+            if onion.target != Target::Current {
+                panic!("onion target was not current");
             }
 
-            // peel or layer onion further before relaying
+            match hello_req.client_type {
+                ClientType::Consumer => { //means we are relay_1
+                    let relay_id = match onion.target {
+                        Target::Relay(id) => id,
+                        _ => panic!("must have a relay to send to!")
+                    };
+                    let layer_tunnel_arc = Self::relay_tunnel(relay_id, context.clone()).await?;
 
-            //receiver_tunnel.send_onion(onion_to_relay).await?;
+                    let onion = Onion {
+                        target: Target::Current,
+                        circuit_id: Some(circuit_id),
+                        message: onion.message
+                    };
+
+                    layer_tunnel_arc.send_onion(onion).await?;
+                },
+                ClientType::Relay => {
+                    let prev_circuit_id = onion.circuit_id.expect("did not receive circuit id");
+
+                    match onion.message {
+                        Message::HelloRequest(req) => {
+                            let new_circuit_id = context_locked.circ_id_generator.get_uid();
+                            let relay_id = match onion.target {
+                                Target::Relay(id) => id,
+                                _ => panic!("must have a relay to send to!")
+                            };
+                            let layer_tunnel_arc = Self::relay_tunnel(relay_id, context.clone()).await?;
+
+                            let symmetric_cipher = context_locked.crypto.gen_secret().symmetric_cipher(req.public_key);
+
+                            context_locked.circuits.insert(prev_circuit_id, Arc::new(
+                                Circuit {
+                                    id: new_circuit_id,
+                                    symmetric_cipher,
+                                    peel_tunnel_addr: peel_tunnel_arc.peer_addr(),
+                                    layer_tunnel_addr: layer_tunnel_arc.peer_addr(),
+                                    endpoint_connection: None
+                                }
+                            ));
+                        },
+                        Message::Payload(ref payload) => {
+                            let circuit = context_locked.circuits.get(&prev_circuit_id).map(|circ_ref| circ_ref.clone()).expect("ewrw");
+                    
+                            let peeled_onion = peel_tunnel_arc.peel_layer(payload.to_vec(), circuit.symmetric_cipher.clone()).await?;
+
+                            match peeled_onion.target {
+                                Target::Current => {
+                                    panic!("got current")
+                                },
+                                Target::Relay(id) => {
+                                    drop(guard);
+                                    let layer_tunnel_arc = Self::relay_tunnel(id, context.clone()).await?;
+
+                                    let onion = Onion {
+                                        target: Target::Current,
+                                        circuit_id: Some(circuit.id),
+                                        message: peeled_onion.message
+                                    };
+
+                                    layer_tunnel_arc.send_onion(onion).await?;
+                                },
+                                Target::IP(ip) => {
+                                    //check if connected
+                                    //false -> connect
+                                    //true -> send to the conn conn
+                                    //send Message::Payload(data) => data
+                                    
+                                    // let circuit = context_locked.circuits.get(&circuit_id).map(|circ| circ.clone()).expect("failed to get circuit");
+                                    
+                                    // if let Some(connection) = circuit.endpoint_connection {
+                                    //     let (reader, writer) = &mut (&connection, &connection);
+
+                                    //     match onion.message {
+                                    //         Message::Payload(payload) => {
+                                                
+                                    //         },
+                                    //         _ => todo!()
+                                    //     }
+                                    // } else {
+                                    //     // connect
+                                    //     circuit.endpoint_connection = Some(TcpStream::connect(ip).await?);
+                                    // }
+                                    let data = match onion.message {
+                                        Message::Payload(data) => data,
+                                        _ => panic!("Wrong message type"),
+                                    };
+                                    
+                                    println!("Received data: {:?}", data)
+                                }
+                            }
+                        },
+                        _ => {
+                            
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 
+    async fn relay_ip(stream: TcpStream) {
+        // tentative
+
+    }
+
     async fn relay_tunnel(relay_id: u32, context: Arc<Mutex<RelayContext>>) -> Result<Arc<Tunnel>> {
         let mut guard = context.lock().await;
         let context_locked = &mut *guard;
-        // lock problemer?
 
         let relay
             = context_locked.indexed_relays
@@ -195,12 +260,12 @@ impl RelayNode {
             Ok(tunnel)
     }
 
-    async fn establish_sender_tunnel(stream: TcpStream, secret: ServerSecret) -> Result<(Tunnel, ClientType)> {
+    async fn establish_sender_tunnel(stream: TcpStream, secret: ServerSecret) -> Result<(Tunnel, HelloRequest)> {
         let reader = &mut RawOnionReader::new(&stream);
 
         let sender_hello = reader.read().await?;
         if let Message::HelloRequest(req) = sender_hello.message {
-            Ok((Tunnel::new(stream, secret.symmetric_cipher(req.public_key)), req.client_type))
+            Ok((Tunnel::new(stream, secret.symmetric_cipher(req.public_key)), req))
         } else {
             Err(Error::new(ErrorKind::InvalidData, "Expected Hello request"))
         }
@@ -254,3 +319,20 @@ impl RelayNode {
         Ok(Tunnel::new(stream, symmetric_cipher))
     }
 }
+
+// match context_locked.relay_tunnels.get(&circuit.layer_tunnel_addr) {
+//     Some(tunnel) => tunnel.clone(),
+//     None => {
+//         match onion_to_relay.target {
+//             Target::Relay(relay_id) => {
+//                 drop(guard);
+//                 Self::relay_tunnel(relay_id, context.clone()).await?
+//             },
+//             Target::IP(ip) => {
+
+//                 todo!();
+//             },
+//             Target::Current => todo!() // err?
+//         }
+//     }
+// }

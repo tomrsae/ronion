@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use aes::Aes256;
-use async_std::net::TcpStream;
+use async_std::net::{TcpStream, SocketAddr};
 
 use super::onionizer::Onionizer;
 
@@ -106,8 +106,8 @@ impl Consumer {
         )
     }
 
-    pub async fn send_message(&mut self, payload: Vec<u8>) -> () {
-        let onion = self.onionizer.grow_onion_relay(payload).await;
+    pub async fn send_message(&mut self, payload: Vec<u8>, addr: SocketAddr) -> () {
+        let onion = self.onionizer.grow_onion_relay(payload, addr).await;
         self.entry_writer.write(onion).await.unwrap();
     }
 
@@ -186,4 +186,150 @@ impl Consumer {
 
         (entry_reader, entry_writer, target_ids, ciphers)
     }
+
+    //relay_1 recieved onion {
+    //  target: relay_2,
+    //  circuit_id: None,
+    //  message: Payload(
+    //      target: relay_3,
+    //      circuit_id: None,
+    //      message: Payload(
+    //          target: relay_4,
+    //          circuit_id: None,
+    //          message: HelloRequest(key)
+    //          )
+    //      )
+    //}
+
+
+    // relay 2 recieve onion {
+    //  target: CURRENT?,
+    //  circuit_id: Some(69),
+    //  message: Payload(
+    //      target: relay_3,
+    //      circuit_id: None,
+    //      message: Payload(
+    //          target: relay_4,
+    //          circuit_id: None,
+    //          message: HelloRequest(key)
+    //          )
+    //      )
+    //}
+
+    // relay 3 recieve onion {
+    //  target: CURRENT?,
+    //  circuit_id: Some(1192929),
+    //  message: Payload(
+    //      target: relay_4,
+    //      circuit_id: None,
+    //      message: HelloRequest(key)
+    //}
+
+
+    // relay 4 recieve onion {
+    //  target: CURRENT?,
+    //  circuit_id: Some(3773),
+    //  message: HelloRequest(key)
+    //}
+
+
+    //relay_1 recieved onion {
+    //  target: relay_2,
+    //  circuit_id: None,
+    //  message: Payload(
+    //      target: relay_3,
+    //      circuit_id: None,
+    //      message: Payload(
+    //          target: relay_4,
+    //          circuit_id: None,
+    //          message: Payload(
+    //              target: IP,
+    //              circuit_id: None,
+    //              message: Payload(data)
+    //          )
+    //      )
+    // )
+    //}
+
+    //relay_1 sends onion {
+    //  target: current,
+    //  circuit_id: Some(1337),
+    //  message: Payload(C(
+    //      target: relay_3,
+    //      circuit_id: None,
+    //      message: Payload(
+    //          target: relay_4,
+    //          circuit_id: None,
+    //          message: Payload(
+    //              target: IP,
+    //              circuit_id: None,
+    //              message: Payload(data)
+    //          )
+    //      )
+    // ))
+    //} to_relay_2
+
+
+    //relay_2 sends onion {
+    //  target: current,
+    //  circuit_id: Some(1337),
+    //  message: Payload(C(
+    //      target: relay_4,
+    //      circuit_id: None,
+    //      message: Payload(C(
+    //          target: IP,
+    //          circuit_id: None,
+    //          message: Payload(data)
+    //      ))
+    // ))
+    //} to_relay_3
+
+    // Hvis onion kommer fra relay - prosesser basert på circuit_id, hent ut og dekrypter payload ved bruk av consumer OnionReader for denne circuit_iden.
+    // Den dekryptere payloaden sier hvor han skal. Vi bytter da target (hvis target er relay) ut med CURRENT (fordi neste man skal vite at han skal tolke dette)
+    // og setter circuit id til relayet som det videresendes til. 
+    
+    // Hvis onion kommer fra consumer - prosesser basert på socket
+
+    //relay_3 sends onion {
+    //  target: current,
+    //  circuit_id: Some(325555555),
+    //  message: Payload(C(
+    //      target: IP,
+    //      circuit_id: None,
+    //      message: Payload(data)
+    // ))
+    //} to_relay_4
+
+    //relay_4 sends data to IP
+
+    //      Som HelloRequest
+    //relay_1 sends onion {
+    //  target: current,
+    //  circuit_id: Some(23),
+    //  message: Payload(C(
+    //      target: relay_3,
+    //      circuit_id: None,
+    //      message: Payload(C(
+    //          target: relay_4,
+    //          circuit_id: None,
+    //          message: HelloRequest(data)
+    //      ))
+    // ))
+    //} to_relay_2
+
+    //relay_2 sends onion {
+    //  target: current,
+    //  circuit_id: Some(1337),
+    //  message: Payload(C(
+    //      target: relay_4,
+    //      circuit_id: None,
+    //      message: HelloRequest(data)
+    // ))
+    //} to_relay_3
+
+    //relay_3 sends onion {
+    //  target: current,
+    //  circuit_id: Some(325555555),
+    //  message: HelloRequest(data)
+    //} to_relay_4
 }

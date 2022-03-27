@@ -40,9 +40,9 @@ impl Proxy {
     }
 
     async fn handle_connection(&mut self, mut stream: TcpStream, target_addr: SocketAddr) -> () {
-        stream = Proxy::handshake(stream, target_addr).await.unwrap();
-        let (mut reader, mut writer) = stream.into_split();
-        self.send_consumer(&mut reader); //Seperate sending task
+        let consumer_stream = Proxy::handshake(stream, target_addr).await.unwrap();
+        let (mut reader, mut writer) = consumer_stream.into_split();
+        self.send_consumer(&mut reader, target_addr); //Seperate sending task
         self.recv_consumer(&mut writer); //Seperate recieving task
     }
 
@@ -102,7 +102,7 @@ impl Proxy {
         return Ok(stream);
     }
 
-    async fn send_consumer(&mut self, stream: &mut OwnedReadHalf) -> () {
+    async fn send_consumer(&mut self, stream: &mut OwnedReadHalf, target_addr: SocketAddr) -> () {
         loop {
             let mut payload = [0u8; 1024];
 
@@ -110,7 +110,7 @@ impl Proxy {
 
             let mut guard = self.consumer.lock().unwrap();
             let consumer_locked = &mut *guard;
-            consumer_locked.send_message(payload.to_vec()).await;
+            consumer_locked.send_message(payload.to_vec(), target_addr).await;
         }
     }
 

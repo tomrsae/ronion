@@ -1,6 +1,7 @@
 use std::{collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc};
 
 use aes::Aes256;
+use async_std::net::TcpStream;
 
 use crate::{uid_generator::UIDGenerator, crypto::ServerCrypto, protocol::onion::Relay};
 
@@ -27,6 +28,9 @@ impl RelayContext {
 }
 
 pub struct Circuit {
+    pub id: u32,
     pub symmetric_cipher: Aes256,
-    pub tunnel_addr: SocketAddr
+    pub peel_tunnel_addr: SocketAddr,
+    pub layer_tunnel_addr: SocketAddr,
+    pub endpoint_connection: Option<TcpStream>
 }
