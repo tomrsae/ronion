@@ -1346,6 +1346,7 @@ name = "ronion_relay"
 version = "0.1.0"
 dependencies = [
  "core",
+ "ronion_index",
 ]
 
 [[package]]

@@ -30,6 +30,7 @@ impl Proxy {
     }
 
     pub async fn serve_consumers(&mut self, context: Arc<Context>, svr_cfg: &ServerConfig) -> () {
+        println!("Started serving consumer");
         let listener = ProxyListener::bind(context, svr_cfg).await.unwrap();
         loop {
             let (stream, target_addr) = listener.accept().await.unwrap();
