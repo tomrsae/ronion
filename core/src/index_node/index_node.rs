@@ -61,13 +61,12 @@ impl IndexNode {
         let hello = reader.read().await?;
         let peer_key = Self::get_peer_key(hello).await?;
         
-        let secret;
-        {
+        let secret = {
             let mut guard = context.lock().await;
             let context_locked = &mut *guard;
 
-            secret = context_locked.crypto.gen_secret();
-        }
+            context_locked.crypto.gen_secret()
+        };
 
         let symmetric_cipher = secret.symmetric_cipher(peer_key);
         let received_onion = reader.with_cipher(symmetric_cipher.clone()).read().await?;
