@@ -1,6 +1,5 @@
 use std::{borrow::BorrowMut, sync::Arc};
 
-use aes::Aes256;
 use async_std::{
     io::{Error, ErrorKind, Result, Write, Cursor},
     net::{IpAddr, SocketAddr, TcpListener, TcpStream},
@@ -9,6 +8,7 @@ use async_std::{
     task,
 };
 
+use crate::crypto::Aes256;
 use crate::{
     protocol::{
         io::{RawOnionReader, RawOnionWriter},

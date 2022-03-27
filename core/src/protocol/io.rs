@@ -1,7 +1,7 @@
 use super::{onion::{ Onion, Target, Relay, ClientType, HelloRequest }, varint::{self, VarIntWritable}};
 use crate::{crypto::SymmetricCipher, protocol::onion::Message};
 
-use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}, ops::Range, borrow::Borrow};
+use std::{pin::Pin, net::{SocketAddr, Ipv4Addr, IpAddr, Ipv6Addr}};
 use async_std::io::{Read, Write, Result, ReadExt, BufReader, ErrorKind, Error, Cursor, BufWriter, WriteExt};
 use super::{bitwriter::BitWriter, varint::VarIntReadable};
 
@@ -38,10 +38,10 @@ impl<R: Read, C: SymmetricCipher> OnionReader<R, C> {
 
     pub async fn read(&mut self) -> Result<Onion> {
         let len = read_varint::<BufReader<R>, u32>(&mut self.reader).await?;
-        let mut raw_onion: Vec<u8> = vec![0u8; len as usize];
-        self.reader.read_exact(&mut raw_onion).await?;
-        self.cipher.decrypt(&mut raw_onion);
-        read_onion(&mut Box::pin(Cursor::new(raw_onion))).await
+        let mut cipher_onion: Vec<u8> = vec![0u8; len as usize]; 
+        self.reader.read_exact(&mut cipher_onion).await?;
+        let plain_onion = self.cipher.decrypt(&cipher_onion);
+        read_onion(&mut Box::pin(Cursor::new(plain_onion))).await
     }
 }
 
@@ -75,14 +75,13 @@ impl<T: Write, C: SymmetricCipher> OnionWriter<T, C> {
     pub async fn write(&mut self, onion: Onion) -> Result<()> {
         let mut cursor = Cursor::new(Vec::new());
         write_onion(&mut Box::pin(BufWriter::new(cursor.get_mut())), onion).await?;
-        let mut raw_onion = cursor.into_inner();
-        raw_onion.extend((0..C::BLOCK_SIZE - raw_onion.len()%C::BLOCK_SIZE).map(|_| 0));
-        self.cipher.encrypt(&mut raw_onion);
+        let mut plain_onion = cursor.into_inner();
+        let cipher_onion = self.cipher.encrypt(&mut plain_onion);
 
-        let (len_vi, len_vi_bytes) = (raw_onion.len() as u32).to_varint();
+        let (len_vi, len_vi_bytes) = (cipher_onion.len() as u32).to_varint();
         let len_vi = &len_vi[..len_vi_bytes];
         self.writer.write_all(len_vi).await?;
-        self.writer.write_all(&raw_onion).await?;
+        self.writer.write_all(&cipher_onion).await?;
         self.writer.flush().await?;
 
         Ok(())
@@ -338,9 +337,8 @@ mod tests {
 
     struct NoopSymmetricCipher {}
     impl SymmetricCipher for NoopSymmetricCipher {
-        const BLOCK_SIZE: usize = 1;
-        fn encrypt(&self, _block: &mut [u8]) {}
-        fn decrypt(&self, _block: &mut [u8]) {}
+        fn encrypt(&self, ciphertext: &[u8]) -> Vec<u8> { Vec::from(ciphertext) }
+        fn decrypt(&self, plaintext: &[u8]) -> Vec<u8> { Vec::from(plaintext) }
     }
 
     macro_rules! onion_rw_test {
