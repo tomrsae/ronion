@@ -40,6 +40,25 @@ impl RelayNode {
         task::block_on(listen_future); // bytte til async?
     }
 
+    pub fn register(&self, index_addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) {
+        let register_future = async {
+            let tunnel = Self::index_tunnel(index_addr, pub_key, index_signing_pub_key).await.expect("Failed to establish onion tunnel with Index node");
+
+            tunnel.send_onion(
+                Onion {
+                    target: Target::Current,
+                    circuit_id: None,
+                    message: Message::RelayPingRequest()
+                }
+            ).await
+            .expect("Failed to send ping request to index node");
+
+            let response = tunnel.recv_onion().await;
+        };
+
+        task::block_on(register_future);
+    }
+
     async fn listen(&self, socket: SocketAddr) {
         let listener = TcpListener::bind(socket)
             .await
@@ -85,7 +104,7 @@ impl RelayNode {
         drop(guard);
 
         // Relay recv loop
-        while let onion_to_relay = sender_channel_arc.recv_onion().await? {
+        while let onion_to_relay = sender_channel_arc.recv_onion().await {
             let mut guard = context.lock().await;
             let context_locked = &mut *guard;
 
@@ -191,26 +210,39 @@ impl RelayNode {
 
     }
 
-    async fn index_all_relays(index_addr: &str, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) -> Result<Vec<Relay>> {
-        let request = Onion {
-            target: Target::Current,
-            circuit_id: None,
-            message: Message::GetRelaysRequest()
-        };
+    async fn index_all_relays(index_addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) -> Result<Vec<Relay>> {
+        let tunnel = Self::index_tunnel(index_addr, pub_key, index_signing_pub_key).await?;
 
-        let stream = TcpStream::connect(index_addr).await?;
+        tunnel.send_onion(
+            Onion {
+                target: Target::Current,
+                circuit_id: None,
+                message: Message::GetRelaysRequest()
+        }).await?;
 
+        let relays_response = tunnel.recv_onion().await;
+        if let Message::GetRelaysResponse(relays) = relays_response.message {
+            Ok(relays)
+        } else {
+            //err?
+            todo!()
+        }
+    }
+
+    async fn index_tunnel(addr: SocketAddr, pub_key: [u8; 32], index_signing_pub_key: [u8; 32]) -> Result<Tunnel> {
+        let stream = TcpStream::connect(addr).await?;
+        
         let mut writer = RawOnionWriter::new(&stream);
         writer.write(
             Onion {
                 target: Target::Current,
                 circuit_id: None,
                 message: Message::HelloRequest(HelloRequest { client_type: ClientType::Relay, public_key: pub_key })
-        }).await?;
-
+            }).await?;
+            
         let mut reader = RawOnionReader::new(&stream);
         let hello_response = reader.read().await?;
-
+        
         let symmetric_cipher = if let Message::HelloResponse(peer_key) = hello_response.message {
             let crypto = ClientCrypto::new(&index_signing_pub_key).expect("Failed to generate crypto");
             crypto.gen_secret().symmetric_cipher(peer_key).expect("Failed to generate symmetric cipher")
@@ -218,20 +250,7 @@ impl RelayNode {
             //err?
             todo!()
         };
-        
-        writer.with_cipher(symmetric_cipher.clone()).write(
-            Onion {
-                target: Target::Current,
-                circuit_id: None,
-                message: Message::GetRelaysRequest()
-        }).await?;
 
-        let relays_response = reader.with_cipher(symmetric_cipher).read().await?;
-        if let Message::GetRelaysResponse(relays) = relays_response.message {
-            Ok(relays)
-        } else {
-            //err?
-            todo!()
-        }
+        Ok(Tunnel::new(stream, symmetric_cipher))
     }
 }

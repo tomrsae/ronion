@@ -26,8 +26,8 @@ impl Tunnel {
         self.peer_addr
     }
 
-    pub async fn recv_onion(&self) -> Result<Onion> {
-        self.reader_ref.lock().await.read().await
+    pub async fn recv_onion(&self) -> Onion {
+        self.reader_ref.lock().await.read().await.expect("Failed to read onion")
     }
 
     pub async fn send_onion(&self, onion: Onion) -> Result<()> {
