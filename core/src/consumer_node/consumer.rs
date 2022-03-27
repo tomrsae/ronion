@@ -5,7 +5,6 @@ use crate::{
         onion::{ClientType, HelloRequest, Message, Onion, Relay, Target},
     },
 };
-use aes::Aes256;
 use async_std::net::{TcpStream, SocketAddr};
 
 use super::onionizer::Onionizer;
