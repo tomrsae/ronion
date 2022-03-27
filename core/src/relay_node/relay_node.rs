@@ -89,68 +89,91 @@ impl RelayNode {
             let mut guard = context.lock().await;
             let context_locked = &mut *guard;
 
-            let circuit = if let Some(id) = onion_to_relay.circuit_id {
-                context_locked.circuits.get(&id)
-                        .map(|circ_ref| circ_ref.clone())
-                        .unwrap_or_else(|| {
-                            let circ = Arc::new(Circuit {
-                                // usikker, ny symm_ciph, eller samme som tunnel?
-                                symmetric_cipher: context_locked.crypto.gen_secret().symmetric_cipher([0_u8; 32]),
-                                tunnel_addr: sender_channel_arc.peer_addr()
-                            });
+            match onion_to_relay.target {
+                Target::Current => {
+                    let circuit = if let Some(id) = onion_to_relay.circuit_id {
+                        context_locked.circuits.get(&id)
+                                .map(|circ_ref| circ_ref.clone())
+                                .unwrap_or_else(|| {
+                                    let circ = Arc::new(Circuit {
+                                        // usikker, ny symm_ciph, eller samme som tunnel?
+                                        symmetric_cipher: context_locked.crypto.gen_secret().symmetric_cipher([0_u8; 32]),
+                                        tunnel_addr: sender_channel_arc.peer_addr()
+                                    });
+        
+                                    context_locked.circuits.insert(id, circ.clone());
+        
+                                    circ
+                                })
+                    } else {
+                        // err?
+                        todo!();
+                    };                    
 
-                            context_locked.circuits.insert(id, circ.clone());
+                    let receiver_tunnel = match context_locked.relay_tunnels.get(&circuit.tunnel_addr) {
+                        Some(tunnel) => tunnel.clone(),
+                        None => {
+                            match onion_to_relay.target {
+                                Target::Relay(relay_id) => {
+                                    // OBS: Mulig deadlock?? Droppe lock først????????????
+                                    Self::relay_tunnel(relay_id, context.clone()).await?
+                                },
+                                Target::IP(ip) => {
 
-                            circ
-                        })
-            } else {
-                // err?
-                todo!();
-            };
-
-            let receiver_tunnel
-                = context_locked.relay_tunnels.get(&circuit.tunnel_addr)
-                    .map(|tunnel_ref| tunnel_ref.clone())
-                    .unwrap_or_else(match onion_to_relay.target {
-                        Target::Relay(relay_id) => {
-                            let relay
-                                = context_locked.indexed_relays
-                                    .iter()
-                                    .find(|relay| relay.id == relay_id)
-                                    .expect("Relay not indexed");
-
-                            if let Some(existing_tunnel)
-                                = context_locked.relay_tunnels
-                                    .contains_key(&relay.addr)
-                                    .then(|| context_locked.relay_tunnels.get(&relay.addr))
-                                    .map(|tunnel| tunnel.unwrap())
-                            {
-                                || { existing_tunnel.clone() }
-                            } else {
-                                let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
-                                let secret = crypto.gen_secret();
-            
-                                let tunnel = Arc::new(Tunnel::reach_relay(TcpStream::connect(relay.addr).await?, secret).await?);
-                                context_locked.relay_tunnels.insert(relay.addr, tunnel.clone());
-
-                                || { tunnel }
+                                    todo!();
+                                },
+                                Target::Current => todo!() // err?
                             }
-                        },
-                        Target::IP(ip) => {
-                            // I am exit node
-                            // not sure bud, ask de bois
-
-                            todo!();
-                        },
-                        Target::Current => todo!() // err?
-                    });
+                        }
+                    };
+                },
+                Target::IP(ip) => {
+                    // skjer vel aldri?
+                },
+                Target::Relay(relay_id) => {
+                    // OBS: Mulig deadlock?? Droppe lock først????????????
+                    Self::relay_tunnel(relay_id, context.clone()).await?
+                        .send_onion(onion_to_relay).await?;
+                }
+            }
 
             // peel or layer onion further before relaying
 
-            receiver_tunnel.send_onion(onion_to_relay).await?;
+            //receiver_tunnel.send_onion(onion_to_relay).await?;
         }
 
         Ok(())
+    }
+
+    async fn relay_tunnel(relay_id: u32, context: Arc<Mutex<RelayContext>>) -> Result<Arc<Tunnel>> {
+        let mut guard = context.lock().await;
+        let context_locked = &mut *guard;
+        // lock problemer?
+
+        let relay
+            = context_locked.indexed_relays
+                .iter()
+                .find(|relay| relay.id == relay_id)
+                .expect("Relay not indexed");
+
+            let tunnel = if let Some(existing_tunnel)
+                = context_locked.relay_tunnels
+                    .contains_key(&relay.addr)
+                    .then(|| context_locked.relay_tunnels.get(&relay.addr))
+                    .map(|tunnel| tunnel.unwrap())
+            {
+                existing_tunnel.clone()
+            } else {
+                let crypto = ClientCrypto::new(&relay.pub_key).expect("Failed to generate crypto");
+                let secret = crypto.gen_secret();
+
+                let tunnel = Arc::new(Tunnel::reach_relay(TcpStream::connect(relay.addr).await?, secret).await?);
+                context_locked.relay_tunnels.insert(relay.addr, tunnel.clone());
+
+                tunnel.clone() 
+            };
+
+            Ok(tunnel)
     }
 
     async fn establish_sender_tunnel(stream: TcpStream, secret: ServerSecret) -> Result<(Tunnel, ClientType)> {
@@ -188,8 +211,7 @@ impl RelayNode {
         let mut reader = RawOnionReader::new(&stream);
         let hello_response = reader.read().await?;
 
-        let symmetric_cipher =
-        if let Message::HelloResponse(peer_key) = hello_response.message {
+        let symmetric_cipher = if let Message::HelloResponse(peer_key) = hello_response.message {
             let crypto = ClientCrypto::new(&index_signing_pub_key).expect("Failed to generate crypto");
             crypto.gen_secret().symmetric_cipher(peer_key).expect("Failed to generate symmetric cipher")
         } else {
