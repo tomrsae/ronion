@@ -80,7 +80,7 @@ impl RelayNode {
             self.context.lock().await.indexed_relays.extend(
                 Self::index_all_relays(index_addr, index_signing_pub_key)
                     .await
-                    .expect("msg"),
+                    .expect("Failed to index relays"),
             )
         };
 
@@ -154,24 +154,26 @@ impl RelayNode {
 
             match hello_req.client_type {
                 ClientType::Consumer => {
-                    println!("Got consumer contact");
                     //means we are relay_1
                     let relay_id = match onion.target {
                         Target::Relay(id) => id,
                         _ => panic!("must have a relay to send to!"),
                     };
 
+                    let new_circ_id = context_locked.circ_id_generator.get_uid();
                     drop(guard);
                     let layer_tunnel_arc = Self::relay_tunnel(relay_id, context.clone()).await?;
 
                     let onion = Onion {
                         target: Target::Current,
-                        circuit_id: Some(circuit_id),
+                        circuit_id: Some(new_circ_id),
                         message: onion.message,
                     };
                     println!("New Onion: {:?}", onion);
 
                     layer_tunnel_arc.send_onion(onion).await?;
+
+                    task::spawn(Self::test(new_circ_id, context.clone()));
                 }
 
                 //relay_1 sends onion {
@@ -180,7 +182,6 @@ impl RelayNode {
                 //  message: HelloRequest(data)
                 //} to_relay_2
                 ClientType::Relay => {
-                    println!("Got relay contact");
                     let prev_circuit_id = onion.circuit_id.expect("did not receive circuit id");
 
                     match onion.message {
@@ -206,7 +207,6 @@ impl RelayNode {
                                             endpoint_connection: None,
                                         }),
                                     );
-                                    println!("got money");
                                 }
                                 Target::Current => {
                                     let pub_key = context_locked.crypto.gen_secret().public_key();
@@ -218,7 +218,6 @@ impl RelayNode {
                                             message: Message::HelloResponse(pub_key),
                                         })
                                         .await?;
-                                    println!("fucked bitches");
                                 }
                                 _ => panic!("must have a relay to send to!"),
                             };
@@ -228,7 +227,7 @@ impl RelayNode {
                                 .circuits
                                 .get(&prev_circuit_id)
                                 .map(|circ_ref| circ_ref.clone())
-                                .expect("ewrw");
+                                .expect("failed to get circuit");
 
                             let peeled_onion = peel_tunnel_arc
                                 .peel_layer(payload.to_vec(), circuit.symmetric_cipher.clone())
@@ -276,8 +275,6 @@ impl RelayNode {
                                         Message::Payload(data) => data,
                                         _ => panic!("Wrong message type"),
                                     };
-
-                                    println!("Received data: {:?}", data)
                                 }
                             }
                         }
@@ -285,6 +282,43 @@ impl RelayNode {
                     }
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    async fn test(circuit_id: u32, context: Arc<Mutex<RelayContext>>) -> Result<()> {
+        let mut guard = context.lock().await;
+        let context_locked = &mut *guard;
+
+        let circuit = context_locked
+            .circuits
+            .get(&circuit_id)
+            .map(|circ| circ.clone())
+            .expect("Failed to find circuit");
+
+        let layer_tunnel_arc = context_locked
+            .relay_tunnels
+            .get(&circuit.layer_tunnel_addr)
+            .map(|tunnel| tunnel.clone())
+            .expect("Failed to find tunnel");
+
+        let peel_tunnel_arc = context_locked
+            .relay_tunnels
+            .get(&circuit.peel_tunnel_addr)
+            .map(|tunnel| tunnel.clone())
+            .expect("Failed to find tunnel");
+
+        while let onion = layer_tunnel_arc.recv_onion().await {
+            let encrypted_onion = layer_tunnel_arc.add_layer(onion).await?;
+
+            peel_tunnel_arc
+                .send_onion(Onion {
+                    circuit_id: Some(circuit.id),
+                    message: Message::Payload(encrypted_onion),
+                    target: Target::Current,
+                })
+                .await?;
         }
 
         Ok(())
@@ -421,20 +455,3 @@ impl RelayNode {
         Ok(OnionTunnel::new(stream, symmetric_cipher))
     }
 }
-
-// match context_locked.relay_tunnels.get(&circuit.layer_tunnel_addr) {
-//     Some(tunnel) => tunnel.clone(),
-//     None => {
-//         match onion_to_relay.target {
-//             Target::Relay(relay_id) => {
-//                 drop(guard);
-//                 Self::relay_tunnel(relay_id, context.clone()).await?
-//             },
-//             Target::IP(ip) => {
-
-//                 todo!();
-//             },
-//             Target::Current => todo!() // err?
-//         }
-//     }
-// }

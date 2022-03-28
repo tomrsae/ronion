@@ -1,4 +1,7 @@
-use std::{env, net::{IpAddr, SocketAddr}};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+};
 
 use core::relay_node::relay_node::RelayNode;
 

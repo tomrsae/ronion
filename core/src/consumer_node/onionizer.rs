@@ -1,5 +1,5 @@
 use async_std::io::{Cursor, WriteExt};
-use async_std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use async_std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::crypto::Aes256;
 use crate::protocol::{
@@ -20,6 +20,7 @@ impl Onionizer {
         }
     }
 
+    // Serializes the given onion to data.
     async fn onionize(onion: Onion, cipher: Aes256) -> Vec<u8> {
         let mut cursor = Cursor::new(Vec::<u8>::new());
         let mut onion_writer = RawOnionWriter::new(cursor.get_mut()).with_cipher(cipher);
@@ -30,6 +31,7 @@ impl Onionizer {
         cursor.into_inner()
     }
 
+    // Deserializes the given data to an onion.
     async fn deonionize(data: Vec<u8>, cipher: Aes256) -> Onion {
         let mut cursor = Cursor::new(Vec::<u8>::new());
         cursor.write(&data).await.unwrap();
@@ -40,6 +42,7 @@ impl Onionizer {
         onion_reader.read().await.expect("onionize read failed")
     }
 
+    // Adds layers to a data load that goes to a specific addr (relay).
     pub async fn grow_onion_relay(&self, payload: Vec<u8>, addr: SocketAddr) -> Onion {
         Onionizer::grow_onion(
             Onion {
@@ -53,12 +56,14 @@ impl Onionizer {
         .await
     }
 
+    // Removes layers from a specified onion and returns the onions core.
     pub async fn peel_onion_relay(&self, onion: Onion) -> Onion {
         Onionizer::peel_onion(onion, self.ciphers.clone()).await
     }
 
+    // Adds layers (grows) the onion for each target/cipher given.
     pub async fn grow_onion(mut onion: Onion, target_ids: Vec<u32>, ciphers: Vec<Aes256>) -> Onion {
-        let mut onion_load: Vec<u8>; //At this point targets and ciphers should be of equal length
+        let mut onion_load: Vec<u8>;
         for i in 0..target_ids.len() {
             onion_load = Onionizer::onionize(onion, ciphers[ciphers.len() - 1 - i].clone()).await;
             onion = Onion {
@@ -71,6 +76,7 @@ impl Onionizer {
         onion
     }
 
+    // Removes layers (peels) the onion for each cipher given.
     pub async fn peel_onion(onion: Onion, ciphers: Vec<Aes256>) -> Onion {
         let mut out_onion: Onion;
         let mut data = match onion.message {
@@ -155,7 +161,10 @@ mod tests {
         let target_ids = (0..3).collect();
         let onionizer = Onionizer::new(target_ids, ciphers);
         let grown_onion = onionizer
-            .grow_onion_relay("Naice test guy".as_bytes().to_vec(), SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+            .grow_onion_relay(
+                "Naice test guy".as_bytes().to_vec(),
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            )
             .await;
         let peeled_onion = onionizer.peel_onion_relay(grown_onion).await;
 
@@ -163,7 +172,10 @@ mod tests {
             Onion {
                 circuit_id: None,
                 message: Message::Payload("Naice test guy".as_bytes().to_vec()),
-                target: Target::IP(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)),
+                target: Target::IP(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                    8080
+                )),
             },
             peeled_onion
         )

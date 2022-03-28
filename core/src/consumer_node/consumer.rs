@@ -16,6 +16,9 @@ pub struct Consumer {
 }
 
 impl Consumer {
+    // Creates a new Consumer instance by dialing an index_addr with
+    // an index key. After receiving relays it will attemtp to set up
+    // its overral circuit in the network.
     pub async fn new(index_addr: String, index_pub_key: [u8; 32]) -> Self {
         let (mut index_reader, mut index_writer) =
             Consumer::dial_with_key(index_addr, index_pub_key).await;
@@ -49,11 +52,14 @@ impl Consumer {
         }
     }
 
+    // Sets upp a tcp connectioon to the given addr.
     async fn dial(addr: String) -> TcpStream {
         println!("{:?}: ", addr);
         TcpStream::connect(addr).await.expect("unable to connect")
     }
 
+    // Dials, given a key. It uses said key to execute a handshake with the recieveing
+    // node at the specified addr.
     async fn dial_with_key(
         addr: String,
         peer_pub_key: [u8; 32],
@@ -64,6 +70,8 @@ impl Consumer {
         Consumer::handshake(&mut Consumer::dial(addr).await, peer_pub_key).await
     }
 
+    // Attempts to create a ronion handshake with the given stream. From the handshake
+    // we will end up with a OnionReader and OnionWriter with the same cipher.
     async fn handshake(
         stream: &mut TcpStream,
         peer_pub_key: [u8; 32],
@@ -110,11 +118,15 @@ impl Consumer {
         )
     }
 
+    // Method to be called by other implementations utelising consumer. Sends
+    // the specified payload as an onion across the consumer's circuit.
     pub async fn send_message(&mut self, payload: Vec<u8>, addr: SocketAddr) -> () {
         let onion = self.onionizer.grow_onion_relay(payload, addr).await;
         self.entry_writer.write(onion).await.unwrap();
     }
 
+    // Method to be called by other implementations utelising consumer. Recieves
+    // a payload from an onion recieved over the consumer's circuit.
     pub async fn recv_message(&mut self) -> Vec<u8> {
         let onion = self.entry_reader.read().await.expect("entry reader failed");
         let peeled_onion = self.onionizer.peel_onion_relay(onion).await;
@@ -128,6 +140,7 @@ impl Consumer {
         }
     }
 
+    //Creates the network circuit before actually utelizing the network.
     async fn create_circuit(
         mut relays: Vec<Relay>,
     ) -> (
@@ -146,7 +159,6 @@ impl Consumer {
             panic!("Relays cannot be zero in length")
         }
         println!("Relays: {:?}", relays);
-        // Decrement all lists for the first onion tunnel (entry node)
         let entry_node = relays.remove(relays.len() - 1);
         let (mut entry_reader, mut entry_writer) =
             Consumer::dial_with_key(entry_node.addr.to_string(), entry_node.pub_key).await;
@@ -168,8 +180,8 @@ impl Consumer {
                 relays.clone()[0..i]
                     .into_iter()
                     .map(|relay| relay.id)
-                    .collect(), //Should send copy
-                ciphers[0..i].to_vec(), //Empty first time
+                    .collect(),
+                ciphers[0..i].to_vec(),
             )
             .await;
             match entry_writer.write(onion).await {

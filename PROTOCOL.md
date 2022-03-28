@@ -48,7 +48,7 @@
    The response to this request contains all of the relays that the index is aware of.
  
  * RelayPingRequest:
-   Tells the Index that the peer is a relay and it is still alive. This request must not have any message content.
+   Tells the Index that the peer is a relay and it is still alive. The content contains a port number and a public signing key.
 
 * RelayPingResponse:
    The response will also have an empty message content.
