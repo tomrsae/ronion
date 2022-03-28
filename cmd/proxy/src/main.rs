@@ -13,8 +13,9 @@ async fn main() {
     let mut proxy: Proxy;
     let context = Context::new_shared(ServerType::Local);
     let svr_cfg = ServerConfig::new(host_addr, pw, CipherKind::AES_256_GCM);
-
+    println!("proxinu");
     proxy = Proxy::new(index_addr).await;
+    println!("work?");
     proxy.serve_consumers(context, &svr_cfg).await;
 }
 

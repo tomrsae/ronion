@@ -1,11 +1,11 @@
 use crate::{
-    crypto::{ClientCrypto, ClientSecret, Aes256},
+    crypto::{Aes256, ClientCrypto, ClientSecret},
     protocol::{
         io::{OnionReader, OnionWriter, RawOnionReader, RawOnionWriter},
         onion::{ClientType, HelloRequest, Message, Onion, Relay, Target},
     },
 };
-use async_std::net::{TcpStream, SocketAddr};
+use async_std::net::{SocketAddr, TcpStream};
 
 use super::onionizer::Onionizer;
 
@@ -35,8 +35,12 @@ impl Consumer {
             _ => panic!("Got unexpected message"),
         };
 
+        println!("In consumer new before circuit creation");
+
         let (entry_reader, entry_writer, target_ids, ciphers) =
             Consumer::create_circuit(relays).await;
+
+        println!("In consumer new after circuit creation");
 
         Consumer {
             entry_reader,
@@ -46,7 +50,8 @@ impl Consumer {
     }
 
     async fn dial(addr: String) -> TcpStream {
-        TcpStream::connect(addr).await.expect("")
+        println!("{:?}: ", addr);
+        TcpStream::connect(addr).await.expect("unable to connect")
     }
 
     async fn dial_with_key(
@@ -92,7 +97,7 @@ impl Consumer {
         let signed_public_key = match hello_resp.message {
             Message::HelloResponse(signed_public_key) => signed_public_key,
             _ => {
-                panic!("Did not get 'HelloResponse'")
+                panic!("expected 'HelloResponse', got {:?}", hello_resp.message)
             }
         };
 
@@ -138,9 +143,9 @@ impl Consumer {
         let mut onion: Onion;
 
         if relays.len() == 0 {
-            panic!("All lists must be of equal length")
+            panic!("Relays cannot be zero in length")
         }
-
+        println!("Relays: {:?}", relays);
         // Decrement all lists for the first onion tunnel (entry node)
         let entry_node = relays.remove(relays.len() - 1);
         let (mut entry_reader, mut entry_writer) =
@@ -185,6 +190,4 @@ impl Consumer {
 
         (entry_reader, entry_writer, target_ids, ciphers)
     }
-
-    
 }

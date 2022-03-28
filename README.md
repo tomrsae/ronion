@@ -13,11 +13,14 @@ Library for using the onion protocol to securely and anonymously connect to serv
 - Onion-Protocol's main purpos is to act as this network's header and payload holder, officially known as 'Onion'. The onion indicates what Consumer, Index and Relay should do with the payload the onion holds. 
 - Cryptography's main purpos is to provide ed_25519 + AES encryption of onions between Consumer, Index and Relay.
 ## Future work
-- Refactor and 
+- Refactor relay node code to make it more maintainable and readable.
+- Write more formal documentation
+- 
 ### Missing features
-- .
+- Connecting a relay to an endpoint
+- 
 ### Potential weaknesses
-
+- 
 
 ## Dependencies
 - x25519-dalek = "1"
@@ -27,13 +30,22 @@ Library for using the onion protocol to securely and anonymously connect to serv
 - async-std = { version = "1.10.0", features = ["attributes"] }
 
 ## Installation
-- Can not install the program, as it is mainly a library.
+ROnion is first and foremost a library, therefore there is no way to install it.
+
+However, to use the library, ...
+
+Examples programs for Consumer, Relay and Index may be found in the "cmd" folder.
 
 ## Usage
-- Library can be used to create own versions of consumer, relays and index nodes. 
+The ROnion library can be used to create your own versions of consumer, relays and index nodes.
+
+It provides the necessary data structures to create onion networks and securely and anonymously sending data over it.
 
 ## Running tests
 - To run this project's tests you need to use Rust's package manager 'cargo'. 
-- Clone and cd into the project, then run the tests with the command:$ cargo test
+- ``git clone` and `cd` into the project, then run the tests using `cargo test`.
 
 ## Documentation
+Formal, accessible documentation is currently lacking and a point for future work.
+
+Documentation for the code can however be found in their corresponding source files.

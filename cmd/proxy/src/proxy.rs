@@ -25,6 +25,8 @@ pub struct Proxy {
 impl Proxy {
     pub async fn new(index_addr: String) -> Self {
         let index_key = key::read_public();
+        println!("Index key read");
+
         let consumer = Arc::new(Mutex::new(Consumer::new(index_addr, index_key).await));
         Proxy { consumer }
     }
@@ -111,7 +113,9 @@ impl Proxy {
 
             let mut guard = self.consumer.lock().unwrap();
             let consumer_locked = &mut *guard;
-            consumer_locked.send_message(payload.to_vec(), target_addr).await;
+            consumer_locked
+                .send_message(payload.to_vec(), target_addr)
+                .await;
         }
     }
 

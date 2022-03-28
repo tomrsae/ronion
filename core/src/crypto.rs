@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
-use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, NewAead}};
+use aes_gcm::{
+    aead::{Aead, NewAead},
+    Aes256Gcm, Key, Nonce,
+};
 use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
 use rand_core::{OsRng, RngCore};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 pub trait SymmetricCipher {
     fn encrypt(&self, plaintext: &[u8]) -> Vec<u8>;
-    fn decrypt(&self, ciphertext: &[u8]) -> Vec<u8>; 
+    fn decrypt(&self, ciphertext: &[u8]) -> Vec<u8>;
 }
 
 pub struct Aes256 {
@@ -16,25 +19,25 @@ pub struct Aes256 {
 impl Aes256 {
     fn new(key: [u8; 32]) -> Aes256 {
         let aes = Arc::new(Aes256Gcm::new(Key::from_slice(&key)));
-        Self {aes}
+        Self { aes }
     }
 }
 impl Clone for Aes256 {
     fn clone(&self) -> Self {
         let aes = self.aes.clone();
-        Self {aes}
+        Self { aes }
     }
 }
 impl SymmetricCipher for Aes256 {
-    fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> { 
+    fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
         let mut nonce = [0u8; 12];
-        OsRng{}.fill_bytes(&mut nonce);
+        OsRng {}.fill_bytes(&mut nonce);
 
-        let mut ciphertext = self.aes.encrypt(
-            Nonce::from_slice(&nonce), 
-            plaintext,
-        ).expect("encryption failed"); 
-        
+        let mut ciphertext = self
+            .aes
+            .encrypt(Nonce::from_slice(&nonce), plaintext)
+            .expect("encryption failed");
+
         ciphertext.extend(nonce.iter());
 
         ciphertext
@@ -42,18 +45,17 @@ impl SymmetricCipher for Aes256 {
 
     fn decrypt(&self, ciphertext: &[u8]) -> Vec<u8> {
         let full_len = ciphertext.len();
-        let nonce = &ciphertext[full_len-12..full_len];
-        let ciphertext = &ciphertext[..full_len-12];
-        
-        let plaintext = self.aes.decrypt(
-            Nonce::from_slice(&nonce), 
-            ciphertext,
-        ).expect("decryption failed");
+        let nonce = &ciphertext[full_len - 12..full_len];
+        let ciphertext = &ciphertext[..full_len - 12];
+
+        let plaintext = self
+            .aes
+            .decrypt(Nonce::from_slice(&nonce), ciphertext)
+            .expect("decryption failed");
 
         plaintext
     }
 }
-
 
 #[derive(Debug)]
 pub enum KeypairError {
@@ -91,7 +93,7 @@ impl ServerSecret {
     pub fn symmetric_cipher(self, peer_public: [u8; 32]) -> Aes256 {
         let peer_public = PublicKey::from(peer_public);
         let shared_secret = self.secret.diffie_hellman(&PublicKey::from(peer_public));
-        Aes256::new(shared_secret.to_bytes()) 
+        Aes256::new(shared_secret.to_bytes())
     }
 }
 
@@ -166,7 +168,7 @@ impl ClientCrypto {
     /// Creates a ClientCrypto from the peer's signing public key.
     pub fn new(signing_public: &[u8; 32]) -> Result<Self, SigningPublicKeyError> {
         let verifier = ed25519_dalek::PublicKey::from_bytes(signing_public)
-            .map_err(|_| SigningPublicKeyError::InvalidData)?;
+            .map_err(|e| SigningPublicKeyError::InvalidData)?;
         Ok(Self { verifier })
     }
 
