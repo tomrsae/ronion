@@ -1,5 +1,5 @@
 [package]
-name = "ronion"
+name = "core"
 version = "0.1.0"
 authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.steensland@gmail.com>", "Tommy René Sætre <tommyrsaetre@gmail.com>"]
 edition = "2021"
@@ -10,6 +10,7 @@ repository = "https://github.com/tomrsae/ronion"
 
 [dependencies]
 x25519-dalek = "1"
+ed25519-dalek = "1"
 rand_core = { version = "0.5.1", features = ["getrandom"] }
-aes = "0.8.1"
-async-std = "1.10.0"
+aes-gcm = "0.9.4"
+async-std = { version = "1.10.0", features = ["attributes"] }

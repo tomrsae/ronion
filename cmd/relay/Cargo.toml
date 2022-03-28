@@ -5,3 +5,5 @@ authors = ["Norbert Görke <norgor@gmail.com>", "Magnus Hektoen Steensland <mag.
 edition = "2021"
 
 [dependencies]
+core = { path = "../../core" }
+ronion_index = { path = "../index" }
