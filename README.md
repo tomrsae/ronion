@@ -54,6 +54,6 @@ It provides the necessary data structures to create onion networks and securely 
 - `git clone` and `cd` into the project, then run the tests using `cargo test`.
 
 ## Documentation
-Documentation of the protocol may be found in [the protocol specification](PROTOCOL.md) (PROTOCOL.md). This describes the onion data structure at the bit level and contains the specification for all flags and fields used in the communication.
+Documentation of the protocol may be found in [the protocol specification](PROTOCOL.md). This describes the onion data structure at the bit level and contains the specification for all flags and fields used in the communication.
 
 Documentation for the code may be found in their corresponding source files.
